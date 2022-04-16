@@ -1,3 +1,8 @@
 package main
 
-func main() {}
+func main() {
+	conf := WebConfig{}
+	conf.ParseParams()
+
+	listenAndServe(conf)
+}

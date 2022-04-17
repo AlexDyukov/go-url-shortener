@@ -6,11 +6,11 @@ import (
 	"log"
 )
 
-type WebConfig struct {
+type Config struct {
 	Port int
 }
 
-func (c *WebConfig) ParseParams() {
+func (c *Config) ParseParams() {
 	flag.IntVar(&c.Port, "port", 8080, "http listen port, 1025-65535")
 	flag.Parse()
 

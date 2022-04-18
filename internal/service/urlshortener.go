@@ -9,7 +9,7 @@ type URLShortener struct {
 }
 
 func isValid(url string) bool {
-	return true
+	return url != ""
 }
 
 func (u *URLShortener) SaveURL(url string) (storage.ID, error) {

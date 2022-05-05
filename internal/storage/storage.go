@@ -1,5 +1,7 @@
 package storage
 
+import "github.com/shomali11/util/xhashes"
+
 type ErrConflict struct{}
 
 func (e ErrConflict) Error() string {
@@ -11,4 +13,8 @@ type ID uint64
 type Storage interface {
 	Get(id ID) (string, bool)
 	Put(str string) (ID, error)
+}
+
+func hash(str string) ID {
+	return ID(xhashes.FNV64a(str))
 }

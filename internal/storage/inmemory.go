@@ -2,8 +2,6 @@ package storage
 
 import (
 	"sync"
-
-	"github.com/shomali11/util/xhashes"
 )
 
 type InMemory struct {
@@ -28,7 +26,7 @@ func (ims *InMemory) Get(id ID) (string, bool) {
 }
 
 func (ims *InMemory) Put(str string) (ID, error) {
-	id := ID(xhashes.FNV64a(str))
+	id := hash(str)
 
 	ims.mutex.Lock()
 	defer ims.mutex.Unlock()
@@ -40,7 +38,7 @@ func (ims *InMemory) Put(str string) (ID, error) {
 	}
 
 	if link != str {
-		return 0, ErrConflict{}
+		return ID(0), ErrConflict{}
 	}
 
 	return id, nil

@@ -2,24 +2,26 @@ package webhandler
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
 	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
-	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
 )
 
-const counter = 100
+const shuffleCounter = 100
 
 var savedURL string = "https://www.google.com/search?q=there+is+search+string"
 var savedID string
 var nonsavedID string
-var testRouter *httprouter.Router
+var testWebHandler *WebHandler
 
 func TestMain(m *testing.M) {
 	// Init
@@ -33,22 +35,17 @@ func TestMain(m *testing.M) {
 	savedID = fmt.Sprint(id)
 
 	nonsavedID = savedID
-	for i := 0; nonsavedID == savedID && i < counter; i += 1 {
+	for i := 0; nonsavedID == savedID && i < shuffleCounter; i += 1 {
 		nonsavedID = shuffle(i, nonsavedID)
 	}
 	if nonsavedID == savedID {
 		panic("cannot generate valid but not saved ID")
 	}
 
-	testWebHandler := NewWebHandler(testService)
-	testRouter = httprouter.New()
-	testRouter.GET("/:id", testWebHandler.HandlerGet)
-	testRouter.POST("/", testWebHandler.HandlerPost)
+	testWebHandler = NewWebHandler(testService)
 
 	// Run tests
-	exitVal := m.Run()
-
-	os.Exit(exitVal)
+	os.Exit(m.Run())
 }
 
 // non actual shuffle, just a little changing of input string
@@ -64,7 +61,7 @@ func shuffle(seed int, in string) string {
 	return string(inRune)
 }
 
-func TestWebHandler_Get(t *testing.T) {
+func TestWebHandler_GetRoot(t *testing.T) {
 	type want struct {
 		statusCode int
 		location   string
@@ -106,7 +103,7 @@ func TestWebHandler_Get(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, tt.request, nil)
 			w := httptest.NewRecorder()
 
-			testRouter.ServeHTTP(w, r)
+			testWebHandler.router.ServeHTTP(w, r)
 			result := w.Result()
 			defer result.Body.Close()
 
@@ -116,7 +113,7 @@ func TestWebHandler_Get(t *testing.T) {
 	}
 }
 
-func TestWebHandler_Post(t *testing.T) {
+func TestWebHandler_PostRoot(t *testing.T) {
 	type want struct {
 		statusCode       int
 		locationEndsWith string
@@ -127,7 +124,7 @@ func TestWebHandler_Post(t *testing.T) {
 		want    want
 	}{
 		{
-			name:    "test POST valid url",
+			name:    "valid url",
 			request: savedURL,
 			want: want{
 				statusCode:       http.StatusCreated,
@@ -135,7 +132,7 @@ func TestWebHandler_Post(t *testing.T) {
 			},
 		},
 		{
-			name:    "test POST invalid request",
+			name:    "invalid request",
 			request: "",
 			want: want{
 				statusCode:       http.StatusBadRequest,
@@ -150,11 +147,84 @@ func TestWebHandler_Post(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.request))
 			w := httptest.NewRecorder()
 
-			testRouter.ServeHTTP(w, r)
+			testWebHandler.router.ServeHTTP(w, r)
 			result := w.Result()
 			defer result.Body.Close()
 
-			assert.Equal(t, result.StatusCode, tt.want.statusCode)
+			assert.Equal(t, tt.want.statusCode, result.StatusCode)
+		})
+	}
+}
+
+func TestWebHandler_PostApiShorten(t *testing.T) {
+	type want struct {
+		statusCode int
+		response   string
+	}
+	type request struct {
+		contentType string `json:"-"`
+		URL         string `json:"url"`
+	}
+	tests := []struct {
+		name    string
+		request request
+		want    want
+	}{
+		{
+			name: "valid url",
+			request: request{
+				URL:         savedURL,
+				contentType: "application/json",
+			},
+			want: want{
+				statusCode: http.StatusCreated,
+				response:   "{\"result\":\"http://localhost:8080/" + savedID + "\"}",
+			},
+		},
+		{
+			name: "invalid url",
+			request: request{
+				URL:         "",
+				contentType: "application/json",
+			},
+			want: want{
+				statusCode: http.StatusBadRequest,
+				response:   "",
+			},
+		},
+		{
+			name: "invalid content type",
+			request: request{
+				URL:         savedURL,
+				contentType: "pikachu",
+			},
+			want: want{
+				statusCode: http.StatusUnsupportedMediaType,
+				response:   "",
+			},
+		},
+	}
+
+	// run tests
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.request)
+			r := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(body))
+			r.Header.Set("Content-Type", tt.request.contentType)
+			w := httptest.NewRecorder()
+
+			testWebHandler.router.ServeHTTP(w, r)
+			result := w.Result()
+			defer result.Body.Close()
+
+			output, err := io.ReadAll(result.Body)
+			assert.Nil(t, err)
+
+			assert.Equal(t, tt.want.statusCode, result.StatusCode)
+			// tests which does not need response check goes with tt.want.response=="" because any string contains empty string
+			if !strings.Contains(string(output), tt.want.response) {
+				t.Fatal("http response does not contain response. Want: '" + tt.want.response + "' but got '" + string(output) + "'")
+			}
 		})
 	}
 }

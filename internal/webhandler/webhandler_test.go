@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 		panic("cannot generate valid but not saved ID")
 	}
 
-	testWebHandler = NewWebHandler(testService)
+	testWebHandler = NewWebHandler(testService, "http://localhost:8080")
 
 	// Run tests
 	os.Exit(m.Run())

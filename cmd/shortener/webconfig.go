@@ -4,18 +4,74 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
+
+	env "github.com/caarlos0/env/v6"
 )
 
 type Config struct {
-	Port int
+	ServerAddress string `env:"SERVER_ADDRESS" envDefault:":8080"`
+	BaseURL       string `env:"BASE_URL" envDefault:"http://localhost:8080"`
 }
 
-func (c *Config) ParseParams() {
-	flag.IntVar(&c.Port, "port", 8080, "http listen port, 1025-65535")
+func (c *Config) Parse() {
+	err := env.Parse(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	flag.StringVar(&c.ServerAddress, "address", c.ServerAddress, "http listen address in \"address:port\" format")
+	flag.StringVar(&c.BaseURL, "baseurl", c.BaseURL, "base url for shortener")
 	flag.Parse()
 
-	if c.Port < 1025 || c.Port > 65535 {
-		logStr := fmt.Sprintf("invalid value \"%d\" for flag -port: should be in range [1025;65535]\n", c.Port)
+	if !c.isValidServerAddress() {
+		logStr := fmt.Sprintf("invalid value \"%s\" for address\n", c.ServerAddress)
 		log.Fatal(logStr)
 	}
+
+	if !c.isValidBaseURL() {
+		logStr := fmt.Sprintf("invalid value \"%s\" for base URL\n", c.BaseURL)
+		log.Fatal(logStr)
+	}
+}
+
+func (c *Config) isValidBaseURL() bool {
+	_, err := url.ParseRequestURI(c.BaseURL)
+	return err == nil
+}
+
+func (c *Config) isValidServerAddress() bool {
+	splitted := strings.Split(c.ServerAddress, ":")
+	if len(splitted) == 0 {
+		return false
+	}
+
+	// validate port
+	portStr := splitted[len(splitted)-1]
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return false
+	}
+	if port < 1 || port > 65535 {
+		return false
+	}
+
+	// validate server address
+	hostStr := strings.TrimSuffix(c.ServerAddress, ":"+portStr)
+	if hostStr == "" || hostStr == "localhost" {
+		return true
+	}
+	//// IPv4
+	if net.ParseIP(hostStr) != nil {
+		return true
+	}
+	//// IPv6
+	if !strings.HasPrefix(hostStr, "[") || !strings.HasSuffix(hostStr, "]") {
+		return false
+	}
+	serverIPv6Address := hostStr[1 : len(hostStr)-1]
+	return net.ParseIP(serverIPv6Address) != nil
 }

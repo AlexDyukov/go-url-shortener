@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
@@ -11,11 +11,11 @@ import (
 
 func main() {
 	conf := Config{}
-	conf.ParseParams()
+	conf.Parse()
 
 	stor := storage.NewInMemory()
 	svc := service.NewURLShortener(stor)
-	wh := webhandler.NewWebHandler(svc)
+	wh := webhandler.NewWebHandler(svc, conf.BaseURL)
 
-	http.ListenAndServe(fmt.Sprintf(":%d", conf.Port), wh.HTTPRouter())
+	log.Fatal(http.ListenAndServe(conf.ServerAddress, wh.HTTPRouter()))
 }

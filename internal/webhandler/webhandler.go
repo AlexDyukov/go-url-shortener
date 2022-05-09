@@ -13,13 +13,15 @@ import (
 )
 
 type WebHandler struct {
-	repo   service.Repository
-	router *httprouter.Router
+	repo    service.Repository
+	router  *httprouter.Router
+	baseURL string
 }
 
-func NewWebHandler(svc service.Repository) *WebHandler {
+func NewWebHandler(svc service.Repository, baseURL string) *WebHandler {
 	h := WebHandler{}
 	h.repo = svc
+	h.baseURL = baseURL
 
 	h.router = httprouter.New()
 	h.router.GET("/:id", h.GetRoot)
@@ -63,7 +65,7 @@ func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, "http://localhost:8080/%v", id)
+	fmt.Fprintf(w, "%s/%v", h.baseURL, id)
 }
 
 func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -96,7 +98,7 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps h
 	outputJSON := struct {
 		URL string `json:"result"`
 	}{}
-	outputJSON.URL = fmt.Sprintf("http://localhost:8080/%v", id)
+	outputJSON.URL = fmt.Sprintf("%s/%v", h.baseURL, id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(outputJSON)

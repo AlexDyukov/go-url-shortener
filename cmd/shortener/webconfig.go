@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -13,8 +15,9 @@ import (
 )
 
 type Config struct {
-	ServerAddress string `env:"SERVER_ADDRESS" envDefault:":8080"`
-	BaseURL       string `env:"BASE_URL" envDefault:"http://localhost:8080"`
+	ServerAddress   string `env:"SERVER_ADDRESS" envDefault:":8080" envExpand:"true"`
+	BaseURL         string `env:"BASE_URL" envDefault:"http://localhost:8080" envExpand:"true"`
+	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"" envExpand:"true"`
 }
 
 func (c *Config) Parse() {
@@ -25,6 +28,7 @@ func (c *Config) Parse() {
 
 	flag.StringVar(&c.ServerAddress, "address", c.ServerAddress, "http listen address in \"address:port\" format")
 	flag.StringVar(&c.BaseURL, "baseurl", c.BaseURL, "base url for shortener")
+	flag.StringVar(&c.FileStoragePath, "file-storage-path", c.FileStoragePath, "base url for shortener")
 	flag.Parse()
 
 	if !c.isValidServerAddress() {
@@ -36,6 +40,16 @@ func (c *Config) Parse() {
 		logStr := fmt.Sprintf("invalid value \"%s\" for base URL\n", c.BaseURL)
 		log.Fatal(logStr)
 	}
+
+	if !c.isValidFileStoragePath() {
+		logStr := fmt.Sprintf("invalid value \"%s\" for file storage path\n", c.FileStoragePath)
+		log.Fatal(logStr)
+	}
+}
+
+func (c *Config) isValidFileStoragePath() bool {
+	_, err := os.Stat(c.FileStoragePath)
+	return err == nil || errors.Is(err, os.ErrNotExist)
 }
 
 func (c *Config) isValidBaseURL() bool {

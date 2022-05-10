@@ -25,21 +25,25 @@ func (ims *InMemory) Get(id ID) (string, bool) {
 	return value, true
 }
 
-func (ims *InMemory) Put(str string) (ID, error) {
-	id := hash(str)
-
+func (ims *InMemory) Save(id ID, str string) error {
 	ims.mutex.Lock()
 	defer ims.mutex.Unlock()
 
 	link, exist := ims.cache[id]
 	if !exist {
 		ims.cache[id] = str
-		return id, nil
+		return nil
 	}
 
 	if link != str {
-		return ID(0), ErrConflict{}
+		return ErrConflict{}
 	}
 
-	return id, nil
+	return nil
+}
+
+func (ims *InMemory) Put(str string) (ID, error) {
+	id := hash(str)
+
+	return id, ims.Save(id, str)
 }

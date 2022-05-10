@@ -26,9 +26,9 @@ func (c *Config) Parse() {
 		log.Fatal(err)
 	}
 
-	flag.StringVar(&c.ServerAddress, "address", c.ServerAddress, "http listen address in \"address:port\" format")
-	flag.StringVar(&c.BaseURL, "baseurl", c.BaseURL, "base url for shortener")
-	flag.StringVar(&c.FileStoragePath, "file-storage-path", c.FileStoragePath, "base url for shortener")
+	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "http listen address in \"address:port\" format")
+	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "base url for shortener")
+	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "base url for shortener")
 	flag.Parse()
 
 	if !c.isValidServerAddress() {
@@ -73,7 +73,7 @@ func (c *Config) isValidServerAddress() bool {
 		return false
 	}
 
-	// validate server address
+	// validate host
 	hostStr := strings.TrimSuffix(c.ServerAddress, ":"+portStr)
 	if hostStr == "" || hostStr == "localhost" {
 		return true

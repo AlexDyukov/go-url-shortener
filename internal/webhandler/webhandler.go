@@ -3,6 +3,7 @@ package webhandler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -31,7 +32,7 @@ func NewWebHandler(svc service.Repository, baseURL string) *WebHandler {
 }
 
 func (h *WebHandler) HTTPRouter() http.Handler {
-	return h.router
+	return newCompressHandler(h.router)
 }
 
 func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -65,14 +66,14 @@ func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, "%s/%v", h.baseURL, id)
+
+	io.WriteString(w, fmt.Sprintf("%s/%v", h.baseURL, id))
 }
 
 func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
-
 	}
 
 	body, err := ioutil.ReadAll(r.Body)

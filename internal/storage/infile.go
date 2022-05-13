@@ -6,11 +6,10 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 )
 
 type InFile struct {
-	ims      *InMemory
+	ims      Storage
 	filename string
 }
 
@@ -20,11 +19,11 @@ type shortedURL struct {
 }
 
 func NewInFile(filename string) (Storage, error) {
-	stor := InMemory{sync.RWMutex{}, map[ID]string{}}
+	stor := NewInMemory()
 
 	fileBytes, err := os.ReadFile(filename)
 	if err != nil {
-		return &stor, err
+		return stor, err
 	}
 
 	var s shortedURL
@@ -36,13 +35,10 @@ func NewInFile(filename string) (Storage, error) {
 		if err := json.Unmarshal([]byte(line), &s); err != nil {
 			log.Fatal(err)
 		}
-		err := stor.Save(s.ID, s.URL)
-		if err != nil {
-			log.Fatal(err)
-		}
+		stor.Save(s.ID, s.URL)
 	}
 
-	return &InFile{&stor, filename}, nil
+	return &InFile{stor, filename}, nil
 }
 
 func (ifs *InFile) Get(id ID) (string, bool) {
@@ -50,36 +46,42 @@ func (ifs *InFile) Get(id ID) (string, bool) {
 }
 
 func (ifs *InFile) Put(str string) (ID, error) {
-	id, err := ifs.ims.Put(str)
-	if err != nil {
-		return id, err
+	id := hash(str)
+
+	link, exist := ifs.Get(id)
+	if exist {
+		if link == str {
+			return id, nil
+
+		}
+		return id, ErrConflict{}
 	}
 
-	if err := ifs.Save(shortedURL{id, str}); err != nil {
-		log.Fatal(err)
-	}
+	ifs.ims.Save(id, str)
+	go ifs.Save(id, str)
 
 	return id, nil
 }
 
-func (ifs *InFile) Save(s shortedURL) error {
-	data, err := json.Marshal(s)
+func (ifs *InFile) Save(id ID, str string) {
+	data, err := json.Marshal(shortedURL{id, str})
 	if err != nil {
-		log.Fatalf("storage: infile: cannot marshal shortedURL: %v", err)
+		log.Printf("storage: infile: cannot marshal shortedURL: %v", err)
+		return
 	}
 
 	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
 	if err != nil {
-		return err
+		log.Printf("storage: infile: cannot open storage file: %v", err)
+		return
 	}
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
 	if _, err := writer.Write(data); err != nil {
-		return err
+		log.Printf("storage: infile: cannot write to storage file: %v", err)
+		return
 	}
 	writer.WriteByte('\n')
 	writer.Flush()
-
-	return nil
 }

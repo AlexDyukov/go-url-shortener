@@ -28,7 +28,7 @@ func (c *Config) Parse() {
 
 	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "http listen address in \"address:port\" format")
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "base url for shortener")
-	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "base url for shortener")
+	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "path to storage file")
 	flag.Parse()
 
 	if !c.isValidServerAddress() {

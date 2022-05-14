@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"net/url"
@@ -32,18 +31,15 @@ func (c *Config) Parse() {
 	flag.Parse()
 
 	if !c.isValidServerAddress() {
-		logStr := fmt.Sprintf("invalid value \"%s\" for address\n", c.ServerAddress)
-		log.Fatal(logStr)
+		log.Fatal("invalid value for address: ", c.ServerAddress)
 	}
 
 	if !c.isValidBaseURL() {
-		logStr := fmt.Sprintf("invalid value \"%s\" for base URL\n", c.BaseURL)
-		log.Fatal(logStr)
+		log.Fatal("invalid value for base URL: ", c.BaseURL)
 	}
 
 	if !c.isValidFileStoragePath() {
-		logStr := fmt.Sprintf("invalid value \"%s\" for file storage path\n", c.FileStoragePath)
-		log.Fatal(logStr)
+		log.Fatal("invalid value for file storage path:", c.FileStoragePath)
 	}
 }
 

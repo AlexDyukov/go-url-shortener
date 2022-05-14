@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
 	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
@@ -17,17 +15,11 @@ func main() {
 
 	var stor storage.Storage
 	if conf.FileStoragePath != "" {
-		file, err := os.OpenFile(conf.FileStoragePath, os.O_RDONLY|os.O_CREATE|os.O_APPEND, 0644)
+		s, err := storage.NewInFile(conf.FileStoragePath)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("cannot open storage file:", err.Error())
 		}
-		file.Close()
-
-		stor, err = storage.NewInFile(conf.FileStoragePath)
-		if err != nil {
-			logStr := fmt.Sprintf("cannot open storage file: %s\n", err)
-			log.Fatal(logStr)
-		}
+		stor = s
 	} else {
 		stor = storage.NewInMemory()
 	}

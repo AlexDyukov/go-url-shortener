@@ -19,28 +19,34 @@ type Config struct {
 	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"" envExpand:"true"`
 }
 
-func (c *Config) Parse() {
-	err := env.Parse(c)
+var config = Config{}
+
+func init() {
+	err := env.Parse(&config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "http listen address in \"address:port\" format")
-	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "base url for shortener")
-	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "path to storage file")
+	flag.StringVar(&config.ServerAddress, "a", config.ServerAddress, "http listen address in \"address:port\" format")
+	flag.StringVar(&config.BaseURL, "b", config.BaseURL, "base url for shortener")
+	flag.StringVar(&config.FileStoragePath, "f", config.FileStoragePath, "path to storage file")
 	flag.Parse()
 
-	if !c.isValidServerAddress() {
-		log.Fatal("invalid value for address: ", c.ServerAddress)
+	if !config.isValidServerAddress() {
+		log.Fatal("invalid value for address: ", config.ServerAddress)
 	}
 
-	if !c.isValidBaseURL() {
-		log.Fatal("invalid value for base URL: ", c.BaseURL)
+	if !config.isValidBaseURL() {
+		log.Fatal("invalid value for base URL: ", config.BaseURL)
 	}
 
-	if !c.isValidFileStoragePath() {
-		log.Fatal("invalid value for file storage path:", c.FileStoragePath)
+	if !config.isValidFileStoragePath() {
+		log.Fatal("invalid value for file storage path:", config.FileStoragePath)
 	}
+}
+
+func GetConfig() *Config {
+	return &config
 }
 
 func (c *Config) isValidFileStoragePath() bool {

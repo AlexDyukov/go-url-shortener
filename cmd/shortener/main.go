@@ -10,8 +10,7 @@ import (
 )
 
 func main() {
-	conf := Config{}
-	conf.Parse()
+	conf := GetConfig()
 
 	var stor storage.Storage
 	if conf.FileStoragePath != "" {

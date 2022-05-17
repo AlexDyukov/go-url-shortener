@@ -62,7 +62,7 @@ func (ifs *InFile) Save(id ID, str string) {
 		return
 	}
 
-	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0777)
+	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		log.Println("storage: infile: Save: cannot open storage file:", err.Error())
 		return

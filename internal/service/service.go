@@ -9,6 +9,6 @@ func (e ErrInvalidURL) Error() string {
 }
 
 type Repository interface {
-	SaveURL(url string) (storage.ID, error)
-	GetURL(id storage.ID) (string, bool)
+	SaveURL(url string) (storage.ShortURL, error)
+	GetURL(short storage.ShortURL) (string, bool)
 }

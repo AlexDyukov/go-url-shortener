@@ -17,71 +17,68 @@ type InFile struct {
 }
 
 type shortedURL struct {
-	ID  ID     `json:"id"`
-	URL string `json:"url"`
+	Surl ShortURL `json:"id"`
+	Furl FullURL  `json:"url"`
+	User User     `json:"user"`
+}
+
+type userURL struct {
+	Surl ShortURL `json:"short_url"`
+	Furl FullURL  `json:"original_url"`
 }
 
 func NewInFile(filename string) (Storage, error) {
 	ifs := InFile{ims: NewInMemory(), filename: filename, seek: 0}
 
-	if err := ifs.ReadUpdates(); err != nil {
+	if err := ifs.readUpdates(); err != nil {
 		return &ifs, err
 	}
 
-	go ifs.Async()
+	go ifs.async()
 
 	return &ifs, nil
 }
 
-func (ifs *InFile) Get(id ID) (string, bool) {
-	return ifs.ims.Get(id)
+func (ifs *InFile) Get(surl ShortURL) (FullURL, bool) {
+	return ifs.ims.Get(surl)
 }
 
-func (ifs *InFile) Put(str string) (ID, error) {
-	id := hash(str)
-
-	link, exist := ifs.Get(id)
-	if exist {
-		if link == str {
-			return id, nil
-
-		}
-		return id, ErrConflict{}
+func (ifs *InFile) Save(surl ShortURL, furl FullURL) error {
+	if err := ifs.ims.Save(surl, furl); err != nil {
+		return err
 	}
 
-	ifs.ims.Save(id, str)
-	go ifs.Save(id, str)
+	go ifs.writeUpdate(shortedURL{surl, furl, DefaultUserID})
 
-	return id, nil
+	return nil
 }
 
-func (ifs *InFile) Save(id ID, str string) {
-	data, err := json.Marshal(shortedURL{id, str})
+func (ifs *InFile) Put(furl FullURL) (ShortURL, error) {
+	surl, err := ifs.ims.Put(furl)
 	if err != nil {
-		log.Println("storage: infile: Save: cannot marshal shortedURL:", err.Error())
-		return
+		return surl, err
 	}
 
-	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		log.Println("storage: infile: Save: cannot open storage file:", err.Error())
-		return
-	}
-	defer file.Close()
+	go ifs.writeUpdate(shortedURL{surl, furl, DefaultUserID})
 
-	writer := bufio.NewWriter(file)
-
-	n, err := writer.Write(data)
-	if err != nil {
-		log.Println("storage: infile: Save: cannot write to storage file:", err.Error())
-		return
-	}
-	writer.WriteByte('\n')
-	ifs.seek += int64(n + 1)
-	writer.Flush()
+	return surl, nil
 }
 
-func (ifs *InFile) Async() {
+func (ifs *InFile) SetAuthor(surl ShortURL, furl FullURL, user User) error {
+	if err := ifs.ims.SetAuthor(surl, furl, user); err != nil {
+		return err
+	}
+
+	go ifs.writeUpdate(shortedURL{surl, furl, user})
+
+	return nil
+}
+
+func (ifs *InFile) GetAuthorURLs(user User) (URLs, bool) {
+	return ifs.ims.GetAuthorURLs(user)
+}
+
+func (ifs *InFile) async() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Println("storage: infile: Async: cannot initialize async worker, async disabled: ", err.Error())
@@ -99,7 +96,7 @@ func (ifs *InFile) Async() {
 			if event.Op&fsnotify.Write != fsnotify.Write {
 				continue
 			}
-			if err := ifs.ReadUpdates(); err != nil {
+			if err := ifs.readUpdates(); err != nil {
 				log.Println("storage: infile: ReadUpdates error:", err.Error())
 			}
 		case err := <-watcher.Errors:
@@ -108,7 +105,36 @@ func (ifs *InFile) Async() {
 	}
 }
 
-func (ifs *InFile) ReadUpdates() error {
+func (ifs *InFile) writeUpdate(s shortedURL) {
+	data, err := json.Marshal(s)
+	if err != nil {
+		log.Println("storage: infile: writeUpdate: cannot marshal shortedURL:", err.Error())
+		return
+	}
+
+	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Println("storage: infile: writeUpdate: cannot marshal shortedURL:", err.Error())
+		return
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+
+	n, err := writer.Write(data)
+	if err != nil {
+		log.Println("storage: infile: writeUpdate: cannot write to buffer:", err.Error())
+		return
+	}
+	writer.WriteByte('\n')
+	ifs.seek += int64(n + 1)
+	if err := writer.Flush(); err != nil {
+		log.Println("storage: infile: writeUpdate: cannot write to file:", err.Error())
+		return
+	}
+}
+
+func (ifs *InFile) readUpdates() error {
 	file, err := os.OpenFile(ifs.filename, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
@@ -139,7 +165,7 @@ func (ifs *InFile) ReadUpdates() error {
 			log.Println("storage: infile: ReadUpdates: cannot Unmarshal shortedURL:", err.Error())
 			continue
 		}
-		ifs.ims.Save(s.ID, s.URL)
+		ifs.ims.SetAuthor(s.Surl, s.Furl, s.User)
 	}
 
 	if fileInfo, err = file.Stat(); err != nil {

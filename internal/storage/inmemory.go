@@ -5,44 +5,59 @@ import (
 )
 
 type InMemory struct {
-	mutex sync.RWMutex
-	cache map[ID]string
+	mutex  sync.RWMutex
+	shorts map[User]URLs
 }
 
 func NewInMemory() Storage {
-	return &InMemory{sync.RWMutex{}, map[ID]string{}}
+	ims := InMemory{sync.RWMutex{}, map[User]URLs{}}
+	ims.shorts[DefaultUserID] = URLs{}
+	return &ims
 }
 
-func (ims *InMemory) Get(id ID) (string, bool) {
+func (ims *InMemory) Get(surl ShortURL) (FullURL, bool) {
 	ims.mutex.RLock()
-	value, exist := ims.cache[id]
+	userShorts := ims.shorts[DefaultUserID]
+	savedURL, exist := userShorts.Get(surl)
 	ims.mutex.RUnlock()
 
-	if !exist {
-		return "", false
-	}
-
-	return value, true
+	return savedURL, exist
 }
 
-func (ims *InMemory) Save(id ID, str string) {
+func (ims *InMemory) Save(surl ShortURL, furl FullURL) error {
 	ims.mutex.Lock()
-	ims.cache[id] = str
+	userShorts := ims.shorts[DefaultUserID]
+	err := userShorts.Save(surl, furl)
 	ims.mutex.Unlock()
+
+	return err
 }
 
-func (ims *InMemory) Put(str string) (ID, error) {
-	id := hash(str)
+func (ims *InMemory) Put(furl FullURL) (ShortURL, error) {
+	surl := short(furl)
 
-	link, exist := ims.Get(id)
-	if exist {
-		if link == str {
-			return id, nil
+	err := ims.Save(surl, furl)
 
-		}
-		return id, ErrConflict{}
+	return surl, err
+}
+
+func (ims *InMemory) SetAuthor(surl ShortURL, furl FullURL, user User) error {
+	ims.mutex.Lock()
+	userShorts, exist := ims.shorts[user]
+	if !exist {
+		ims.shorts[user] = URLs{}
 	}
+	err := userShorts.Save(surl, furl)
 
-	ims.Save(id, str)
-	return id, nil
+	ims.mutex.Unlock()
+
+	return err
+}
+
+func (ims *InMemory) GetAuthorURLs(user User) (URLs, bool) {
+	ims.mutex.RLock()
+	urls, exist := ims.shorts[user]
+	ims.mutex.RUnlock()
+
+	return urls, exist
 }

@@ -42,7 +42,7 @@ func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request, ps httprout
 		return
 	}
 
-	url, exist := h.repo.GetURL(storage.ID(id))
+	url, exist := h.repo.GetURL(storage.ShortURL(id))
 	if !exist {
 		w.WriteHeader(http.StatusNotFound)
 		return

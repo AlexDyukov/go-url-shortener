@@ -2,8 +2,8 @@ package webhandler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +18,7 @@ import (
 
 const shuffleCounter = 100
 
+var baseURL string = "http://localhost:8080"
 var savedURL string = "https://www.google.com/search?q=there+is+search+string"
 var savedID string
 var nonsavedID string
@@ -26,13 +27,15 @@ var testWebHandler *WebHandler
 func TestMain(m *testing.M) {
 	// Init
 	testStorage := storage.NewInMemory()
-	testService := service.NewURLShortener(testStorage)
+	testService := service.NewURLShortener(testStorage, baseURL)
 
-	id, err := testService.SaveURL(savedURL)
+	savedURL, err := testService.SaveURL(context.Background(), savedURL)
 	if err != nil {
 		panic("cannot save predefined valid url")
 	}
-	savedID = fmt.Sprint(id)
+	savedID = strings.TrimPrefix(savedURL, baseURL)
+	savedID = strings.TrimPrefix(savedID, "/")
+	savedID = strings.TrimSuffix(savedID, "/")
 
 	nonsavedID = savedID
 	for i := 0; nonsavedID == savedID && i < shuffleCounter; i += 1 {
@@ -42,7 +45,7 @@ func TestMain(m *testing.M) {
 		panic("cannot generate valid but not saved ID")
 	}
 
-	testWebHandler = NewWebHandler(testService, "http://localhost:8080")
+	testWebHandler = NewWebHandler(testService, "testtesttesttest")
 
 	// Run tests
 	os.Exit(m.Run())
@@ -89,9 +92,9 @@ func TestWebHandler_GetRoot(t *testing.T) {
 		},
 		{
 			name:    "test GET invalid param",
-			request: "/-1",
+			request: "/a",
 			want: want{
-				statusCode: http.StatusBadRequest,
+				statusCode: http.StatusNotFound,
 				location:   "",
 			},
 		},
@@ -178,7 +181,7 @@ func TestWebHandler_PostApiShorten(t *testing.T) {
 			},
 			want: want{
 				statusCode: http.StatusCreated,
-				response:   "{\"result\":\"http://localhost:8080/" + savedID + "\"}",
+				response:   "{\"result\":\"" + baseURL + "/" + savedID + "\"}",
 			},
 		},
 		{

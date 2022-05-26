@@ -22,8 +22,8 @@ func main() {
 	} else {
 		stor = storage.NewInMemory()
 	}
-	svc := service.NewURLShortener(stor)
-	wh := webhandler.NewWebHandler(svc, conf.BaseURL)
+	svc := service.NewURLShortener(stor, conf.BaseURL)
+	wh := webhandler.NewWebHandler(svc, conf.EncryptKey)
 
 	log.Fatal(http.ListenAndServe(conf.ServerAddress, wh.HTTPRouter()))
 }

@@ -17,14 +17,9 @@ type InFile struct {
 }
 
 type shortedURL struct {
-	Surl ShortURL `json:"id"`
-	Furl FullURL  `json:"url"`
-	User User     `json:"user"`
-}
-
-type userURL struct {
-	Surl ShortURL `json:"short_url"`
-	Furl FullURL  `json:"original_url"`
+	Sid  ShortID `json:"id"`
+	Furl FullURL `json:"url"`
+	User User    `json:"user"`
 }
 
 func NewInFile(filename string) (Storage, error) {
@@ -39,43 +34,33 @@ func NewInFile(filename string) (Storage, error) {
 	return &ifs, nil
 }
 
-func (ifs *InFile) Get(surl ShortURL) (FullURL, bool) {
-	return ifs.ims.Get(surl)
+func (ifs *InFile) Get(user User, sid ShortID) (FullURL, bool) {
+	return ifs.ims.Get(user, sid)
 }
 
-func (ifs *InFile) Save(surl ShortURL, furl FullURL) error {
-	if err := ifs.ims.Save(surl, furl); err != nil {
+func (ifs *InFile) Save(user User, sid ShortID, furl FullURL) error {
+	if err := ifs.ims.Save(user, sid, furl); err != nil {
 		return err
 	}
 
-	go ifs.writeUpdate(shortedURL{surl, furl, DefaultUserID})
+	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
 
 	return nil
 }
 
-func (ifs *InFile) Put(furl FullURL) (ShortURL, error) {
-	surl, err := ifs.ims.Put(furl)
+func (ifs *InFile) Put(user User, furl FullURL) (ShortID, error) {
+	sid, err := ifs.ims.Put(user, furl)
 	if err != nil {
-		return surl, err
+		return sid, err
 	}
 
-	go ifs.writeUpdate(shortedURL{surl, furl, DefaultUserID})
+	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
 
-	return surl, nil
+	return sid, nil
 }
 
-func (ifs *InFile) SetAuthor(surl ShortURL, furl FullURL, user User) error {
-	if err := ifs.ims.SetAuthor(surl, furl, user); err != nil {
-		return err
-	}
-
-	go ifs.writeUpdate(shortedURL{surl, furl, user})
-
-	return nil
-}
-
-func (ifs *InFile) GetAuthorURLs(user User) (URLs, bool) {
-	return ifs.ims.GetAuthorURLs(user)
+func (ifs *InFile) GetURLs(user User) URLs {
+	return ifs.ims.GetURLs(user)
 }
 
 func (ifs *InFile) async() {
@@ -87,7 +72,7 @@ func (ifs *InFile) async() {
 	defer watcher.Close()
 
 	if err = watcher.Add(ifs.filename); err != nil {
-		log.Println("storage: infile: Async: cannot initialize notifies for storage file: ", err.Error())
+		log.Println("storage: infile: Async: cannot initialize notifies for storage file, async disabled: ", err.Error())
 		return
 	}
 	for {
@@ -114,7 +99,7 @@ func (ifs *InFile) writeUpdate(s shortedURL) {
 
 	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
-		log.Println("storage: infile: writeUpdate: cannot marshal shortedURL:", err.Error())
+		log.Println("storage: infile: writeUpdate: cannot open storage file:", err.Error())
 		return
 	}
 	defer file.Close()
@@ -123,15 +108,20 @@ func (ifs *InFile) writeUpdate(s shortedURL) {
 
 	n, err := writer.Write(data)
 	if err != nil {
-		log.Println("storage: infile: writeUpdate: cannot write to buffer:", err.Error())
+		log.Println("storage: infile: writeUpdate: cannot write to IO buffer:", err.Error())
 		return
 	}
-	writer.WriteByte('\n')
-	ifs.seek += int64(n + 1)
+	if err := writer.WriteByte('\n'); err != nil {
+		log.Println("storage: infile: writeUpdate: cannot write to IO buffer:", err.Error())
+		return
+	}
+
 	if err := writer.Flush(); err != nil {
 		log.Println("storage: infile: writeUpdate: cannot write to file:", err.Error())
 		return
 	}
+
+	ifs.seek += int64(n + 1)
 }
 
 func (ifs *InFile) readUpdates() error {
@@ -147,6 +137,7 @@ func (ifs *InFile) readUpdates() error {
 	}
 
 	if fileInfo.Size() < ifs.seek {
+		// reread from start
 		ifs.seek = 0
 	}
 
@@ -162,10 +153,16 @@ func (ifs *InFile) readUpdates() error {
 			break
 		}
 		if err := json.Unmarshal(line, &s); err != nil {
-			log.Println("storage: infile: ReadUpdates: cannot Unmarshal shortedURL:", err.Error())
+			log.Println("storage: infile: readUpdates: cannot Unmarshal shortedURL:", err.Error())
 			continue
 		}
-		ifs.ims.SetAuthor(s.Surl, s.Furl, s.User)
+
+		if err := ifs.ims.Save(s.User, s.Sid, s.Furl); err != nil {
+			log.Println("storage: infile: readUpdates: cannot Save in memory:", err.Error())
+			continue
+		}
+
+		UpdateUsersSeed(s.User)
 	}
 
 	if fileInfo, err = file.Stat(); err != nil {

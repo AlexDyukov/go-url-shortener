@@ -2,47 +2,45 @@ package webhandler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
-	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
-	"github.com/julienschmidt/httprouter"
+	"github.com/gorilla/mux"
 )
 
 type WebHandler struct {
-	repo    service.Repository
-	router  *httprouter.Router
-	baseURL string
+	repo      service.Repository
+	router    *mux.Router
+	encryptor *Encryptor
 }
 
-func NewWebHandler(svc service.Repository, baseURL string) *WebHandler {
+func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 	h := WebHandler{}
 	h.repo = svc
-	h.baseURL = baseURL
+	h.encryptor = newEncryptor([]byte(encryptKey))
 
-	h.router = httprouter.New()
-	h.router.GET("/:id", h.GetRoot)
-	h.router.POST("/", h.PostRoot)
-	h.router.POST("/api/shorten", h.PostAPIShorten)
+	router := mux.NewRouter()
+	router.HandleFunc("/{id:[0-9]+}", h.GetRoot).Methods("GET")
+	router.HandleFunc("/", h.PostRoot).Methods("POST")
+	router.HandleFunc("/api/shorten", h.PostAPIShorten).Methods("POST")
+	router.HandleFunc("/api/user/urls", h.GetAPIUserURLs).Methods("GET")
+
+	h.router = router
+
 	return &h
 }
 
 func (h *WebHandler) HTTPRouter() http.Handler {
-	return newCompressHandler(h.router)
+	ah := newAuthHandler(h.encryptor)
+	handler := ah(h.router)
+	handler = compressHandler(handler)
+	return handler
 }
 
-func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	id, err := strconv.ParseUint(ps.ByName("id"), 10, 64)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	url, exist := h.repo.GetURL(storage.ShortURL(id))
+func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request) {
+	url, exist := h.repo.GetURL(r.Context(), mux.Vars(r)["id"])
 	if !exist {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -52,14 +50,14 @@ func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request, ps httprout
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
-func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	id, err := h.repo.SaveURL(string(body))
+	shortURL, err := h.repo.SaveURL(r.Context(), string(body))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -67,10 +65,10 @@ func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request, ps httprou
 
 	w.WriteHeader(http.StatusCreated)
 
-	io.WriteString(w, fmt.Sprintf("%s/%v", h.baseURL, id))
+	io.WriteString(w, shortURL)
 }
 
-func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
@@ -90,7 +88,7 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps h
 		return
 	}
 
-	id, err := h.repo.SaveURL(string(inputJSON.URL))
+	shortURL, err := h.repo.SaveURL(r.Context(), string(inputJSON.URL))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -99,8 +97,22 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request, ps h
 	outputJSON := struct {
 		URL string `json:"result"`
 	}{}
-	outputJSON.URL = fmt.Sprintf("%s/%v", h.baseURL, id)
+	outputJSON.URL = shortURL
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(outputJSON)
+}
+
+func (h *WebHandler) GetAPIUserURLs(w http.ResponseWriter, r *http.Request) {
+	urls := h.repo.GetURLs(r.Context())
+	if len(urls) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "\t")
+	encoder.Encode(urls)
 }

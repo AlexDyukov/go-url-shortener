@@ -25,7 +25,7 @@ func (w compressWriter) Header() http.Header {
 	return w.HTTPResponseWriter.Header()
 }
 
-func newCompressHandler(next http.Handler) http.Handler {
+func compressHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		//response
 		acceptEncoding := strings.ToLower(r.Header.Get("Accept-Encoding"))

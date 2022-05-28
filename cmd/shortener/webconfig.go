@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	env "github.com/caarlos0/env/v6"
+	pgx "github.com/jackc/pgx/v4"
 )
 
 type Config struct {
@@ -18,6 +19,7 @@ type Config struct {
 	BaseURL         string `env:"BASE_URL" envDefault:"http://localhost:8080" envExpand:"true"`
 	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"" envExpand:"true"`
 	EncryptKey      string `env:"ENCRYPT_KEY" envDefault:"testtesttesttest" envExpand:"true"`
+	DataBaseDSN     string `env:"DATABASE_DSN" envDefault:"" envExpand:"true"`
 }
 
 var config = Config{}
@@ -32,6 +34,7 @@ func init() {
 	flag.StringVar(&config.BaseURL, "b", config.BaseURL, "base url for shortener")
 	flag.StringVar(&config.FileStoragePath, "f", config.FileStoragePath, "path to storage file")
 	flag.StringVar(&config.EncryptKey, "k", config.EncryptKey, "16 bit encrypt key for auth cookie")
+	flag.StringVar(&config.DataBaseDSN, "d", config.DataBaseDSN, "database DSN link")
 	flag.Parse()
 
 	if !config.isValidServerAddress() {
@@ -49,24 +52,14 @@ func init() {
 	if !config.isValidEncryptKey() {
 		log.Fatal("invalid value for encrypt key:", config.EncryptKey)
 	}
+
+	if !config.isValidDataBaseDSN() {
+		log.Fatal("invalid value for database DSN link:", config.DataBaseDSN)
+	}
 }
 
 func GetConfig() *Config {
 	return &config
-}
-
-func (c *Config) isValidEncryptKey() bool {
-	return true
-}
-
-func (c *Config) isValidFileStoragePath() bool {
-	_, err := os.Stat(c.FileStoragePath)
-	return err == nil || errors.Is(err, os.ErrNotExist)
-}
-
-func (c *Config) isValidBaseURL() bool {
-	_, err := url.ParseRequestURI(c.BaseURL)
-	return err == nil
 }
 
 func (c *Config) isValidServerAddress() bool {
@@ -100,4 +93,29 @@ func (c *Config) isValidServerAddress() bool {
 	}
 	serverIPv6Address := hostStr[1 : len(hostStr)-1]
 	return net.ParseIP(serverIPv6Address) != nil
+}
+
+func (c *Config) isValidBaseURL() bool {
+	_, err := url.ParseRequestURI(c.BaseURL)
+	return err == nil
+}
+
+func (c *Config) isValidFileStoragePath() bool {
+	if c.FileStoragePath == "" {
+		return true
+	}
+	_, err := os.Stat(c.FileStoragePath)
+	return err == nil || errors.Is(err, os.ErrNotExist)
+}
+
+func (c *Config) isValidEncryptKey() bool {
+	return len(c.EncryptKey) == 16
+}
+
+func (c *Config) isValidDataBaseDSN() bool {
+	if c.DataBaseDSN == "" {
+		return true
+	}
+	_, err := pgx.ParseConfig(c.DataBaseDSN)
+	return err == nil
 }

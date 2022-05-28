@@ -1,10 +1,8 @@
 package webhandler
 
 import (
-	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
 	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
@@ -12,40 +10,48 @@ import (
 
 const userCookieName = "URL-Shortener-User"
 
-func newAuthHandler(encryptor *Encryptor) func(next http.Handler) http.Handler {
+func newAuthHandler(encryptor *Encryptor, repo service.Repository) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user := getCookiedUser(encryptor, r)
-			cookie := &http.Cookie{
-				Name:  userCookieName,
-				Value: makeCookiedUser(encryptor, user),
+			ctx := r.Context()
+
+			user, err := getCookiedUser(encryptor, r)
+			if err != nil && r.Method == http.MethodPost {
+				user = repo.NewUser(ctx)
+
+				//http.ResponseWriter
+				cookie := &http.Cookie{
+					Name:  userCookieName,
+					Value: makeCookiedUser(encryptor, user),
+				}
+				http.SetCookie(w, cookie)
 			}
-			http.SetCookie(w, cookie)
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), service.UserCtxKey{}, user)))
+
+			//http.Request
+			r = r.WithContext(storage.PutUser(ctx, user))
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func getCookiedUser(encryptor *Encryptor, r *http.Request) storage.User {
+func getCookiedUser(encryptor *Encryptor, r *http.Request) (storage.User, error) {
 	cookieUserID, err := r.Cookie(userCookieName)
-	if err != nil && r.Method == http.MethodPost {
-		return storage.NewUser()
-	}
 	if err != nil {
-		return storage.DefaultUser
+		return storage.DefaultUser, err
 	}
 
 	userStr, err := encryptor.Decode(cookieUserID.Value)
 	if err != nil {
-		return storage.NewUser()
+		return storage.DefaultUser, err
 	}
 
-	user, err := storage.ParseUser(strings.TrimSpace(userStr))
+	user, err := storage.ParseUser([]byte(userStr))
 	if err != nil {
-		return storage.NewUser()
+		return storage.DefaultUser, err
 	}
 
-	return user
+	return user, nil
 }
 
 func makeCookiedUser(encryptor *Encryptor, user storage.User) string {

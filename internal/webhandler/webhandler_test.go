@@ -23,13 +23,19 @@ var savedURL string = "https://www.google.com/search?q=there+is+search+string"
 var savedID string
 var nonsavedID string
 var testWebHandler *WebHandler
+var ctx context.Context
 
 func TestMain(m *testing.M) {
 	// Init
+	ctx = context.Background()
+
 	testStorage := storage.NewInMemory()
 	testService := service.NewURLShortener(testStorage, baseURL)
 
-	savedURL, err := testService.SaveURL(context.Background(), savedURL)
+	user := testService.NewUser(ctx)
+	ctx = storage.PutUser(ctx, user)
+
+	savedURL, err := testService.SaveURL(ctx, savedURL)
 	if err != nil {
 		panic("cannot save predefined valid url")
 	}
@@ -103,7 +109,7 @@ func TestWebHandler_GetRoot(t *testing.T) {
 	// run tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodGet, tt.request, nil)
+			r := httptest.NewRequest(http.MethodGet, tt.request, nil).WithContext(ctx)
 			w := httptest.NewRecorder()
 
 			testWebHandler.router.ServeHTTP(w, r)
@@ -147,7 +153,7 @@ func TestWebHandler_PostRoot(t *testing.T) {
 	// run tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.request))
+			r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.request)).WithContext(ctx)
 			w := httptest.NewRecorder()
 
 			testWebHandler.router.ServeHTTP(w, r)
@@ -212,7 +218,7 @@ func TestWebHandler_PostApiShorten(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body, _ := json.Marshal(tt.request)
-			r := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(body))
+			r := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(body)).WithContext(ctx)
 			r.Header.Set("Content-Type", tt.request.contentType)
 			w := httptest.NewRecorder()
 

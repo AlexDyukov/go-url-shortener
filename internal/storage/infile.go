@@ -2,7 +2,9 @@ package storage
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -29,41 +31,61 @@ func NewInFile(filename string) (Storage, error) {
 		return &ifs, err
 	}
 
-	go ifs.async()
+	go ifs.backgroundUpdate()
 
 	return &ifs, nil
 }
 
-func (ifs *InFile) Get(user User, sid ShortID) (FullURL, bool) {
-	return ifs.ims.Get(user, sid)
+func (ifs *InFile) Get(ctx context.Context, sid ShortID) (FullURL, bool) {
+	return ifs.ims.Get(ctx, sid)
 }
 
-func (ifs *InFile) Save(user User, sid ShortID, furl FullURL) error {
-	if err := ifs.ims.Save(user, sid, furl); err != nil {
+func (ifs *InFile) Save(ctx context.Context, sid ShortID, furl FullURL) error {
+	if err := ifs.ims.Save(ctx, sid, furl); err != nil {
 		return err
 	}
 
+	user, _ := GetUser(ctx)
 	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
 
 	return nil
 }
 
-func (ifs *InFile) Put(user User, furl FullURL) (ShortID, error) {
-	sid, err := ifs.ims.Put(user, furl)
+func (ifs *InFile) Put(ctx context.Context, furl FullURL) (ShortID, error) {
+	sid, err := ifs.ims.Put(ctx, furl)
 	if err != nil {
 		return sid, err
 	}
 
+	user, _ := GetUser(ctx)
 	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
 
 	return sid, nil
 }
 
-func (ifs *InFile) GetURLs(user User) URLs {
-	return ifs.ims.GetURLs(user)
+func (ifs *InFile) GetURLs(ctx context.Context) URLs {
+	return ifs.ims.GetURLs(ctx)
 }
 
-func (ifs *InFile) async() {
+func (ifs *InFile) NewUser(ctx context.Context) User {
+	return ifs.ims.NewUser(ctx)
+}
+
+func (ifs *InFile) Ping(ctx context.Context) bool {
+	if !ifs.ims.Ping(ctx) {
+		return false
+	}
+
+	file, err := os.OpenFile(ifs.filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return false
+	}
+	file.Close()
+
+	return true
+}
+
+func (ifs *InFile) backgroundUpdate() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Println("storage: infile: Async: cannot initialize async worker, async disabled: ", err.Error())
@@ -157,12 +179,11 @@ func (ifs *InFile) readUpdates() error {
 			continue
 		}
 
-		if err := ifs.ims.Save(s.User, s.Sid, s.Furl); err != nil {
+		ctx := context.WithValue(context.Background(), UserCtxKey{}, fmt.Sprint(s.User))
+		if err := ifs.ims.Save(ctx, s.Sid, s.Furl); err != nil {
 			log.Println("storage: infile: readUpdates: cannot Save in memory:", err.Error())
 			continue
 		}
-
-		UpdateUsersSeed(s.User)
 	}
 
 	if fileInfo, err = file.Stat(); err != nil {

@@ -26,6 +26,7 @@ func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 	router.HandleFunc("/", h.PostRoot).Methods("POST")
 	router.HandleFunc("/api/shorten", h.PostAPIShorten).Methods("POST")
 	router.HandleFunc("/api/user/urls", h.GetAPIUserURLs).Methods("GET")
+	router.HandleFunc("/ping", h.Ping).Methods("GET")
 
 	h.router = router
 
@@ -33,7 +34,7 @@ func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 }
 
 func (h *WebHandler) HTTPRouter() http.Handler {
-	ah := newAuthHandler(h.encryptor)
+	ah := newAuthHandler(h.encryptor, h.repo)
 	handler := ah(h.router)
 	handler = compressHandler(handler)
 	return handler
@@ -115,4 +116,10 @@ func (h *WebHandler) GetAPIUserURLs(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "\t")
 	encoder.Encode(urls)
+}
+
+func (h *WebHandler) Ping(w http.ResponseWriter, r *http.Request) {
+	if !h.repo.Ping(r.Context()) {
+		http.Error(w, "Storage unavailable", http.StatusInternalServerError)
+	}
 }

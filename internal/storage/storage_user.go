@@ -1,27 +1,59 @@
 package storage
 
-import "strconv"
+import (
+	"bytes"
+	"context"
+	"fmt"
+)
+
+type ErrInvalidUser struct{}
+
+func (e ErrInvalidUser) Error() string {
+	return "Storage: invalid user"
+}
 
 type User uint64
 
 var DefaultUser = User(0)
-var usersCount = uint64(1)
 
-func NewUser() User {
-	usersCount += 1
-	return User(usersCount)
+func ParseUser(str []byte) (User, error) {
+	str = bytes.TrimSpace(str)
+	if len(str) == 0 {
+		return DefaultUser, ErrInvalidUser{}
+	}
+
+	pos := 0
+	u := uint64(0)
+	for pos < len(str) && (str[pos] >= '0' && str[pos] <= '9') {
+		if u > u*uint64(10) { //overflow check
+			return DefaultUser, ErrInvalidUser{}
+		}
+		u = u * uint64(10)
+
+		number := uint64(str[pos] - '0')
+		if u > u+number { //overflow check
+			return DefaultUser, ErrInvalidUser{}
+		}
+		u = u + number
+
+		pos += 1
+	}
+	if pos != len(str) {
+		return DefaultUser, ErrInvalidUser{}
+	}
+
+	return User(u), nil
 }
 
-func ParseUser(userStr string) (User, error) {
-	user, err := strconv.ParseUint(userStr, 10, 64)
-	if err != nil {
-		return DefaultUser, err
+func GetUser(ctx context.Context) (User, error) {
+	input, ok := ctx.Value(UserCtxKey{}).(string)
+	if !ok {
+		return DefaultUser, ErrInvalidUser{}
 	}
-	return User(user), nil
+
+	return ParseUser([]byte(input))
 }
 
-func UpdateUsersSeed(user User) {
-	if usersCount < uint64(user) {
-		usersCount = uint64(user)
-	}
+func PutUser(ctx context.Context, user User) context.Context {
+	return context.WithValue(ctx, UserCtxKey{}, fmt.Sprint(user))
 }

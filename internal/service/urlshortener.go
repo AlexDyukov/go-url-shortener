@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
 )
@@ -25,15 +24,14 @@ func (u *URLShortener) getFullURL(furl storage.FullURL) string {
 	return fmt.Sprint(furl)
 }
 
-func (u *URLShortener) SaveURL(ctx context.Context, url string) (string, error) {
-	if !isValidURL(url) {
+func (u *URLShortener) SaveURL(ctx context.Context, fullURL string) (string, error) {
+	if !isValidURL(fullURL) {
 		return "", ErrInvalidURL{}
 	}
 
-	user := getUser(ctx)
-	furl := storage.FullURL(url)
+	furl := storage.FullURL(fullURL)
 
-	sid, err := u.stor.Put(user, furl)
+	sid, err := u.stor.Put(ctx, furl)
 	if err != nil {
 		return "", err
 	}
@@ -41,15 +39,13 @@ func (u *URLShortener) SaveURL(ctx context.Context, url string) (string, error) 
 	return u.getShortURL(sid), nil
 }
 
-func (u *URLShortener) GetURL(ctx context.Context, shortURLstr string) (string, bool) {
-	parsedShortID, err := strconv.ParseUint(shortURLstr, 10, 64)
+func (u *URLShortener) GetURL(ctx context.Context, shortIDstr string) (string, bool) {
+	sid, err := storage.ParseShort([]byte(shortIDstr))
 	if err != nil {
 		return "", false
 	}
 
-	sid := storage.ShortID(parsedShortID)
-	user := getUser(ctx)
-	furl, exist := u.stor.Get(user, sid)
+	furl, exist := u.stor.Get(ctx, sid)
 	if !exist {
 		return "", false
 	}
@@ -57,17 +53,18 @@ func (u *URLShortener) GetURL(ctx context.Context, shortURLstr string) (string, 
 }
 
 func (u *URLShortener) GetURLs(ctx context.Context) []URLs {
-	user := getUser(ctx)
-
 	answer := []URLs{}
-
-	if user == storage.DefaultUser {
-		return answer
-	}
-
-	for sid, furl := range u.stor.GetURLs(user) {
+	for sid, furl := range u.stor.GetURLs(ctx) {
 		answer = append(answer, URLs{Short: u.getShortURL(sid), Original: u.getFullURL(furl)})
 	}
 
 	return answer
+}
+
+func (u *URLShortener) NewUser(ctx context.Context) storage.User {
+	return u.stor.NewUser(ctx)
+}
+
+func (u *URLShortener) Ping(ctx context.Context) bool {
+	return u.stor.Ping(ctx)
 }

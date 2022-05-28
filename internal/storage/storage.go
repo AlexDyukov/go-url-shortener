@@ -1,14 +1,14 @@
 package storage
 
-type ErrConflict struct{}
+import "context"
 
-func (e ErrConflict) Error() string {
-	return "Storage: conflict keys"
-}
+type UserCtxKey struct{}
 
 type Storage interface {
-	Get(user User, sid ShortID) (FullURL, bool)
-	Save(user User, sid ShortID, furl FullURL) error
-	Put(user User, furl FullURL) (ShortID, error)
-	GetURLs(user User) URLs
+	Get(ctx context.Context, sid ShortID) (FullURL, bool)
+	Save(ctx context.Context, sid ShortID, furl FullURL) error
+	Put(ctx context.Context, furl FullURL) (ShortID, error)
+	GetURLs(ctx context.Context) URLs
+	NewUser(ctx context.Context) User
+	Ping(ctx context.Context) bool
 }

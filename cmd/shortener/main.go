@@ -13,13 +13,20 @@ func main() {
 	conf := GetConfig()
 
 	var stor storage.Storage
-	if conf.FileStoragePath != "" {
+	switch {
+	case conf.DataBaseDSN != "":
+		s, err := storage.NewInDatabase(conf.DataBaseDSN)
+		if err != nil {
+			log.Fatal("cannot open database connection:", err.Error())
+		}
+		stor = s
+	case conf.FileStoragePath != "":
 		s, err := storage.NewInFile(conf.FileStoragePath)
 		if err != nil {
 			log.Fatal("cannot open storage file:", err.Error())
 		}
 		stor = s
-	} else {
+	default:
 		stor = storage.NewInMemory()
 	}
 	svc := service.NewURLShortener(stor, conf.BaseURL)

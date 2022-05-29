@@ -19,9 +19,9 @@ type URLs struct {
 
 type Repository interface {
 	SaveURL(ctx context.Context, fullURL string) (string, error)
-	GetURL(ctx context.Context, shortIDstr string) (string, bool)
-	GetURLs(ctx context.Context) []URLs
-	NewUser(ctx context.Context) storage.User
+	GetURL(ctx context.Context, shortIDstr string) (string, error)
+	GetURLs(ctx context.Context) ([]URLs, error)
+	NewUser(ctx context.Context) (storage.User, error)
 	Ping(ctx context.Context) bool
 }
 

@@ -9,27 +9,27 @@ import (
 type InMemory struct {
 	mutex      sync.RWMutex
 	shorts     map[User]URLs
-	usersCount uint64
+	usersCount int64
 }
 
 func NewInMemory() Storage {
-	ims := InMemory{mutex: sync.RWMutex{}, shorts: map[User]URLs{}, usersCount: uint64(0)}
+	ims := InMemory{mutex: sync.RWMutex{}, shorts: map[User]URLs{}, usersCount: int64(0)}
 	ims.shorts[DefaultUser] = URLs{}
 	return &ims
 }
 
 func (ims *InMemory) updateUsersCount(user User) {
-	oldUsersCount := atomic.LoadUint64(&ims.usersCount)
-	newUsersCount := uint64(user)
+	oldUsersCount := atomic.LoadInt64(&ims.usersCount)
+	newUsersCount := int64(user)
 	for oldUsersCount < newUsersCount {
-		if atomic.CompareAndSwapUint64(&ims.usersCount, oldUsersCount, newUsersCount) {
+		if atomic.CompareAndSwapInt64(&ims.usersCount, oldUsersCount, newUsersCount) {
 			return
 		}
-		oldUsersCount = atomic.LoadUint64(&ims.usersCount)
+		oldUsersCount = atomic.LoadInt64(&ims.usersCount)
 	}
 }
 
-func (ims *InMemory) Get(_ context.Context, sid ShortID) (FullURL, bool) {
+func (ims *InMemory) Get(_ context.Context, sid ShortID) (FullURL, error) {
 	ims.mutex.RLock()
 	defer ims.mutex.RUnlock()
 
@@ -71,10 +71,13 @@ func (ims *InMemory) Put(ctx context.Context, furl FullURL) (ShortID, error) {
 	return sid, ims.Save(ctx, sid, furl)
 }
 
-func (ims *InMemory) GetURLs(ctx context.Context) URLs {
+func (ims *InMemory) GetURLs(ctx context.Context) (URLs, error) {
 	user, err := GetUser(ctx)
-	if err != nil || user == DefaultUser {
-		return URLs{}
+	if err != nil {
+		return URLs{}, err
+	}
+	if user == DefaultUser {
+		return URLs{}, ErrNotFound{}
 	}
 
 	ims.mutex.RLock()
@@ -84,18 +87,18 @@ func (ims *InMemory) GetURLs(ctx context.Context) URLs {
 	}
 	ims.mutex.RUnlock()
 
-	return result
+	return result, nil
 }
 
-func (ims *InMemory) NewUser(ctx context.Context) User {
-	oldUsersCount := atomic.LoadUint64(&ims.usersCount)
+func (ims *InMemory) NewUser(_ context.Context) (User, error) {
+	oldUsersCount := atomic.LoadInt64(&ims.usersCount)
 	newUsersCount := oldUsersCount + 1
-	for !atomic.CompareAndSwapUint64(&ims.usersCount, oldUsersCount, newUsersCount) {
-		oldUsersCount = atomic.LoadUint64(&ims.usersCount)
+	for !atomic.CompareAndSwapInt64(&ims.usersCount, oldUsersCount, newUsersCount) {
+		oldUsersCount = atomic.LoadInt64(&ims.usersCount)
 		newUsersCount = oldUsersCount + 1
 	}
 
-	return User(newUsersCount)
+	return User(newUsersCount), nil
 }
 
 func (ims *InMemory) Ping(_ context.Context) bool {

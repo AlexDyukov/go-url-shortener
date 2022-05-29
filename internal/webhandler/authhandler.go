@@ -2,6 +2,7 @@ package webhandler
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
@@ -17,7 +18,12 @@ func newAuthHandler(encryptor *Encryptor, repo service.Repository) func(next htt
 
 			user, err := getCookiedUser(encryptor, r)
 			if err != nil && r.Method == http.MethodPost {
-				user = repo.NewUser(ctx)
+				user, err = repo.NewUser(ctx)
+				if err != nil {
+					log.Println("webhandler: authhandler: cannot call repo.NewUser():", err.Error())
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
 
 				//http.ResponseWriter
 				cookie := &http.Cookie{

@@ -39,29 +39,34 @@ func (u *URLShortener) SaveURL(ctx context.Context, fullURL string) (string, err
 	return u.getShortURL(sid), nil
 }
 
-func (u *URLShortener) GetURL(ctx context.Context, shortIDstr string) (string, bool) {
+func (u *URLShortener) GetURL(ctx context.Context, shortIDstr string) (string, error) {
 	sid, err := storage.ParseShort([]byte(shortIDstr))
 	if err != nil {
-		return "", false
+		return "", err
 	}
 
-	furl, exist := u.stor.Get(ctx, sid)
-	if !exist {
-		return "", false
+	furl, err := u.stor.Get(ctx, sid)
+	if err != nil {
+		return "", err
 	}
-	return u.getFullURL(furl), true
+	return u.getFullURL(furl), nil
 }
 
-func (u *URLShortener) GetURLs(ctx context.Context) []URLs {
+func (u *URLShortener) GetURLs(ctx context.Context) ([]URLs, error) {
+	urls, err := u.stor.GetURLs(ctx)
+	if err != nil {
+		return []URLs{}, err
+	}
+
 	answer := []URLs{}
-	for sid, furl := range u.stor.GetURLs(ctx) {
+	for sid, furl := range urls {
 		answer = append(answer, URLs{Short: u.getShortURL(sid), Original: u.getFullURL(furl)})
 	}
 
-	return answer
+	return answer, nil
 }
 
-func (u *URLShortener) NewUser(ctx context.Context) storage.User {
+func (u *URLShortener) NewUser(ctx context.Context) (storage.User, error) {
 	return u.stor.NewUser(ctx)
 }
 

@@ -18,10 +18,17 @@ func (e ErrInvalidShortID) Error() string {
 	return "Storage: invalid shorted url"
 }
 
+type ErrNotFound struct{}
+
+func (e ErrNotFound) Error() string {
+	return "Storage: url not found"
+}
+
 type FullURL string
-type ShortID uint64
+type ShortID int64
 
 var DefaultShortID = ShortID(0)
+var DefaultFullURL = FullURL("")
 
 type URLs map[ShortID]FullURL
 
@@ -39,13 +46,20 @@ func (urls URLs) Save(sid ShortID, furl FullURL) error {
 	return nil
 }
 
-func (urls URLs) Get(sid ShortID) (FullURL, bool) {
+func (urls URLs) Get(sid ShortID) (FullURL, error) {
 	furl, exist := urls[sid]
-	return furl, exist
+	if !exist {
+		return DefaultFullURL, ErrNotFound{}
+	}
+	return furl, nil
 }
 
 func short(furl FullURL) ShortID {
-	return ShortID(xhashes.FNV64a(string(furl)))
+	sid := ShortID(xhashes.FNV64a(string(furl)))
+	if sid < 0 {
+		return -sid
+	}
+	return sid
 }
 
 func ParseShort(str []byte) (ShortID, error) {
@@ -55,14 +69,14 @@ func ParseShort(str []byte) (ShortID, error) {
 	}
 
 	pos := 0
-	shorted := uint64(0)
+	shorted := int64(0)
 	for pos < len(str) && (str[pos] >= '0' && str[pos] <= '9') {
-		if shorted > shorted*uint64(10) { //overflow check
+		if shorted > shorted*int64(10) { //overflow check
 			return DefaultShortID, ErrInvalidShortID{}
 		}
-		shorted = shorted * uint64(10)
+		shorted = shorted * int64(10)
 
-		number := uint64(str[pos] - '0')
+		number := int64(str[pos] - '0')
 		if shorted > shorted+number { //overflow check
 			return DefaultShortID, ErrInvalidShortID{}
 		}

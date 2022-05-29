@@ -12,7 +12,7 @@ func (e ErrInvalidUser) Error() string {
 	return "Storage: invalid user"
 }
 
-type User uint64
+type User int64
 
 var DefaultUser = User(0)
 
@@ -23,14 +23,21 @@ func ParseUser(str []byte) (User, error) {
 	}
 
 	pos := 0
-	u := uint64(0)
+	u := int64(0)
+	// sign
+	sign := int64(1)
+	if len(str) > 1 && str[pos] == '-' {
+		sign = -sign
+		pos += 1
+	}
+	// value
 	for pos < len(str) && (str[pos] >= '0' && str[pos] <= '9') {
-		if u > u*uint64(10) { //overflow check
+		if u > u*int64(10) { //overflow check
 			return DefaultUser, ErrInvalidUser{}
 		}
-		u = u * uint64(10)
+		u = u * int64(10)
 
-		number := uint64(str[pos] - '0')
+		number := int64(str[pos] - '0')
 		if u > u+number { //overflow check
 			return DefaultUser, ErrInvalidUser{}
 		}
@@ -42,7 +49,7 @@ func ParseUser(str []byte) (User, error) {
 		return DefaultUser, ErrInvalidUser{}
 	}
 
-	return User(u), nil
+	return User(sign * u), nil
 }
 
 func GetUser(ctx context.Context) (User, error) {

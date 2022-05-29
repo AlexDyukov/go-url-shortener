@@ -1,0 +1,22 @@
+version: '2.4'
+services:
+    app:
+        build: .
+        depends_on:
+            postgres:
+                condition: service_healthy
+        ports:
+        - '8080:8080'
+        environment:
+            DATABASE_DSN: 'postgresql://postgres:postgres@postgres:5432/postgres?sslmode=disable'
+    postgres:
+        image: postgres
+        ports:
+        - '5432:5432'
+        environment:
+            POSTGRES_PASSWORD: postgres
+        healthcheck:
+            test: ["CMD", "pg_isready", "-U", "postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5

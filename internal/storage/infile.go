@@ -36,7 +36,7 @@ func NewInFile(filename string) (Storage, error) {
 	return &ifs, nil
 }
 
-func (ifs *InFile) Get(ctx context.Context, sid ShortID) (FullURL, bool) {
+func (ifs *InFile) Get(ctx context.Context, sid ShortID) (FullURL, error) {
 	return ifs.ims.Get(ctx, sid)
 }
 
@@ -63,11 +63,11 @@ func (ifs *InFile) Put(ctx context.Context, furl FullURL) (ShortID, error) {
 	return sid, nil
 }
 
-func (ifs *InFile) GetURLs(ctx context.Context) URLs {
+func (ifs *InFile) GetURLs(ctx context.Context) (URLs, error) {
 	return ifs.ims.GetURLs(ctx)
 }
 
-func (ifs *InFile) NewUser(ctx context.Context) User {
+func (ifs *InFile) NewUser(ctx context.Context) (User, error) {
 	return ifs.ims.NewUser(ctx)
 }
 

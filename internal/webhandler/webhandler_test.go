@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	testStorage := storage.NewInMemory()
 	testService := service.NewURLShortener(testStorage, baseURL)
 
-	user := testService.NewUser(ctx)
+	user, _ := testService.NewUser(ctx)
 	ctx = storage.PutUser(ctx, user)
 
 	savedURL, err := testService.SaveURL(ctx, savedURL)

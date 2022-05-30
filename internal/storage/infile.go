@@ -46,29 +46,45 @@ func (ifs *InFile) Save(ctx context.Context, sid ShortID, furl FullURL) error {
 	}
 
 	user, _ := GetUser(ctx)
-	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
+	update := []shortedURL{}
+	update = append(update, shortedURL{Sid: sid, Furl: furl, User: user})
+	go ifs.writeUpdates(update)
 
 	return nil
 }
 
 func (ifs *InFile) Put(ctx context.Context, furl FullURL) (ShortID, error) {
-	sid, err := ifs.ims.Put(ctx, furl)
+	sid := short(furl)
+
+	return sid, ifs.Save(ctx, sid, furl)
+}
+
+func (ifs *InFile) PutBatch(ctx context.Context, batch BatchRequest) (BatchResponse, error) {
+	response, err := ifs.ims.PutBatch(ctx, batch)
 	if err != nil {
-		return sid, err
+		return response, err
 	}
 
 	user, _ := GetUser(ctx)
-	go ifs.writeUpdate(shortedURL{Sid: sid, Furl: furl, User: user})
+	update := []shortedURL{}
+	for corrid, sid := range response {
+		update = append(update, shortedURL{Sid: sid, Furl: batch[corrid], User: user})
+	}
+	go ifs.writeUpdates(update)
 
-	return sid, nil
+	return response, nil
 }
 
-func (ifs *InFile) GetURLs(ctx context.Context) (URLs, error) {
+func (ifs *InFile) GetURLs(ctx context.Context) (SavedURLs, error) {
 	return ifs.ims.GetURLs(ctx)
 }
 
 func (ifs *InFile) NewUser(ctx context.Context) (User, error) {
 	return ifs.ims.NewUser(ctx)
+}
+
+func (ifs *InFile) AddUser(ctx context.Context, user User) {
+	ifs.ims.AddUser(ctx, user)
 }
 
 func (ifs *InFile) Ping(ctx context.Context) bool {
@@ -112,12 +128,7 @@ func (ifs *InFile) backgroundUpdate() {
 	}
 }
 
-func (ifs *InFile) writeUpdate(s shortedURL) {
-	data, err := json.Marshal(s)
-	if err != nil {
-		log.Println("storage: infile: writeUpdate: cannot marshal shortedURL:", err.Error())
-		return
-	}
+func (ifs *InFile) writeUpdates(s []shortedURL) {
 
 	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
@@ -128,22 +139,24 @@ func (ifs *InFile) writeUpdate(s shortedURL) {
 
 	writer := bufio.NewWriter(file)
 
+	data := []byte{}
+	for _, v := range s {
+		marshaled, _ := json.Marshal(v)
+		data = append(data, marshaled...)
+		data = append(data, '\n')
+	}
+
 	n, err := writer.Write(data)
 	if err != nil {
 		log.Println("storage: infile: writeUpdate: cannot write to IO buffer:", err.Error())
 		return
 	}
-	if err := writer.WriteByte('\n'); err != nil {
-		log.Println("storage: infile: writeUpdate: cannot write to IO buffer:", err.Error())
-		return
-	}
-
 	if err := writer.Flush(); err != nil {
 		log.Println("storage: infile: writeUpdate: cannot write to file:", err.Error())
 		return
 	}
 
-	ifs.seek += int64(n + 1)
+	ifs.seek += int64(n)
 }
 
 func (ifs *InFile) readUpdates() error {

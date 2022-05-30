@@ -52,7 +52,7 @@ func getCookiedUser(encryptor *Encryptor, r *http.Request) (storage.User, error)
 		return storage.DefaultUser, err
 	}
 
-	user, err := storage.ParseUser([]byte(userStr))
+	user, err := storage.ParseUser(userStr)
 	if err != nil {
 		return storage.DefaultUser, err
 	}

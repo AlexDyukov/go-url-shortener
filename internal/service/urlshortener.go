@@ -24,6 +24,10 @@ func (u *URLShortener) getFullURL(furl storage.FullURL) string {
 	return fmt.Sprint(furl)
 }
 
+func (u *URLShortener) getCorrelationID(corrid storage.CorrelationID) string {
+	return fmt.Sprint(corrid)
+}
+
 func (u *URLShortener) SaveURL(ctx context.Context, fullURL string) (string, error) {
 	if !isValidURL(fullURL) {
 		return "", ErrInvalidURL{}
@@ -39,8 +43,24 @@ func (u *URLShortener) SaveURL(ctx context.Context, fullURL string) (string, err
 	return u.getShortURL(sid), nil
 }
 
+func (u *URLShortener) SaveBatch(ctx context.Context, breq []BatchRequestItem) ([]BatchResponseItem, error) {
+	storRequest := storage.BatchRequest{}
+	for _, v := range breq {
+		corrid := storage.ParseCorrelationID(v.CorrelationID)
+		furl := storage.FullURL(v.OriginalURL)
+		storRequest[corrid] = furl
+	}
+
+	storResponse, err := u.stor.PutBatch(ctx, storRequest)
+	result := []BatchResponseItem{}
+	for corrid, sid := range storResponse {
+		result = append(result, BatchResponseItem{CorrelationID: u.getCorrelationID(corrid), ShortURL: u.getShortURL(sid)})
+	}
+	return result, err
+}
+
 func (u *URLShortener) GetURL(ctx context.Context, shortIDstr string) (string, error) {
-	sid, err := storage.ParseShort([]byte(shortIDstr))
+	sid, err := storage.ParseShort(shortIDstr)
 	if err != nil {
 		return "", err
 	}

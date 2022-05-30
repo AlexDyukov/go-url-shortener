@@ -7,60 +7,55 @@ import (
 )
 
 type InMemory struct {
-	mutex      sync.RWMutex
-	shorts     map[User]URLs
-	usersCount int64
+	mutex  sync.RWMutex
+	shorts map[User]SavedURLs
+	users  int64
 }
 
 func NewInMemory() Storage {
-	ims := InMemory{mutex: sync.RWMutex{}, shorts: map[User]URLs{}, usersCount: int64(0)}
-	ims.shorts[DefaultUser] = URLs{}
+	ims := InMemory{mutex: sync.RWMutex{}, shorts: map[User]SavedURLs{}, users: int64(0)}
+	ims.shorts[DefaultUser] = SavedURLs{}
 	return &ims
-}
-
-func (ims *InMemory) updateUsersCount(user User) {
-	oldUsersCount := atomic.LoadInt64(&ims.usersCount)
-	newUsersCount := int64(user)
-	for oldUsersCount < newUsersCount {
-		if atomic.CompareAndSwapInt64(&ims.usersCount, oldUsersCount, newUsersCount) {
-			return
-		}
-		oldUsersCount = atomic.LoadInt64(&ims.usersCount)
-	}
 }
 
 func (ims *InMemory) Get(_ context.Context, sid ShortID) (FullURL, error) {
 	ims.mutex.RLock()
 	defer ims.mutex.RUnlock()
 
-	userShorts := ims.shorts[DefaultUser]
-	return userShorts.Get(sid)
+	furl, exist := ims.shorts[DefaultUser][sid]
+	if !exist {
+		return DefaultFullURL, ErrNotFound{}
+	}
+	return furl, nil
 }
 
 func (ims *InMemory) Save(ctx context.Context, sid ShortID, furl FullURL) error {
 	user, err := GetUser(ctx)
 	if err != nil {
 		return err
+	} else if user == DefaultUser {
+		return ErrInvalidUser{}
 	}
 
 	ims.mutex.Lock()
 	defer ims.mutex.Unlock()
 
-	userShorts, exists := ims.shorts[user]
-	if !exists {
-		userShorts = URLs{}
+	// save short to defaultUser which used for Get() method
+	savedurl, exist := ims.shorts[DefaultUser][sid]
+	if !exist {
+		ims.shorts[DefaultUser][sid] = furl
+	} else if savedurl != furl {
+		return ErrConflict{}
+	}
+
+	// user's shorts
+	userShorts, exist := ims.shorts[user]
+	if !exist {
+		userShorts = SavedURLs{}
 		ims.shorts[user] = userShorts
-		go ims.updateUsersCount(user)
+		go ims.AddUser(ctx, user)
 	}
-
-	if err := userShorts.Save(sid, furl); err != nil {
-		return err
-	}
-
-	defaultShorts := ims.shorts[DefaultUser]
-	if err := defaultShorts.Save(sid, furl); err != nil {
-		return err
-	}
+	userShorts[sid] = furl
 
 	return nil
 }
@@ -71,34 +66,83 @@ func (ims *InMemory) Put(ctx context.Context, furl FullURL) (ShortID, error) {
 	return sid, ims.Save(ctx, sid, furl)
 }
 
-func (ims *InMemory) GetURLs(ctx context.Context) (URLs, error) {
+func (ims *InMemory) PutBatch(ctx context.Context, batch BatchRequest) (BatchResponse, error) {
 	user, err := GetUser(ctx)
 	if err != nil {
-		return URLs{}, err
+		return nil, err
 	}
-	if user == DefaultUser {
-		return URLs{}, ErrNotFound{}
+
+	ims.mutex.Lock()
+	defer ims.mutex.Unlock()
+
+	defaultShorts := ims.shorts[DefaultUser]
+	userShorts, exist := ims.shorts[user]
+	if !exist {
+		userShorts = SavedURLs{}
+		ims.shorts[user] = userShorts
+		go ims.AddUser(ctx, user)
+	}
+
+	result := BatchResponse{}
+	for corrid, furl := range batch {
+		sid := short(furl)
+
+		savedurl, exist := defaultShorts[sid]
+		if !exist {
+			defaultShorts[sid] = furl
+		} else if savedurl != furl {
+			//just do nothing, response wont contains failed corrid
+			continue
+		}
+
+		if _, exist = userShorts[sid]; !exist {
+			userShorts[sid] = furl
+		}
+
+		result[corrid] = sid
+	}
+
+	return result, nil
+}
+
+func (ims *InMemory) GetURLs(ctx context.Context) (SavedURLs, error) {
+	user, err := GetUser(ctx)
+	if err != nil {
+		return nil, err
+	} else if user == DefaultUser {
+		return nil, ErrNotFound{}
 	}
 
 	ims.mutex.RLock()
-	result := URLs{}
+	defer ims.mutex.RUnlock()
+
+	result := SavedURLs{}
 	for sid, furl := range ims.shorts[user] {
 		result[sid] = furl
 	}
-	ims.mutex.RUnlock()
+
+	if len(result) == 0 {
+		return nil, ErrNotFound{}
+	}
 
 	return result, nil
 }
 
 func (ims *InMemory) NewUser(_ context.Context) (User, error) {
-	oldUsersCount := atomic.LoadInt64(&ims.usersCount)
-	newUsersCount := oldUsersCount + 1
-	for !atomic.CompareAndSwapInt64(&ims.usersCount, oldUsersCount, newUsersCount) {
-		oldUsersCount = atomic.LoadInt64(&ims.usersCount)
-		newUsersCount = oldUsersCount + 1
-	}
+	n := atomic.AddInt64(&ims.users, int64(1))
+	return User(n), nil
+}
 
-	return User(newUsersCount), nil
+func (ims *InMemory) AddUser(_ context.Context, user User) {
+	o := atomic.LoadInt64(&ims.users)
+	n := int64(user)
+	// 1, 2, ... N, -N, -N+1, ... -1, 0
+	for (n > o) || (n < o && n < 0) {
+		if atomic.CompareAndSwapInt64(&ims.users, o, n) {
+			return
+		}
+		o = atomic.LoadInt64(&ims.users)
+	}
 }
 
 func (ims *InMemory) Ping(_ context.Context) bool {

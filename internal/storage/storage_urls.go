@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"bytes"
+	"strconv"
 
 	"github.com/shomali11/util/xhashes"
 )
@@ -25,14 +25,13 @@ func (e ErrNotFound) Error() string {
 }
 
 type FullURL string
+type CorrelationID string
 type ShortID int64
 
 var DefaultShortID = ShortID(0)
 var DefaultFullURL = FullURL("")
 
-type URLs map[ShortID]FullURL
-
-func (urls URLs) Save(sid ShortID, furl FullURL) error {
+func (urls SavedURLs) Save(sid ShortID, furl FullURL) error {
 	savedurl, exist := urls[sid]
 	if !exist {
 		urls[sid] = furl
@@ -46,7 +45,7 @@ func (urls URLs) Save(sid ShortID, furl FullURL) error {
 	return nil
 }
 
-func (urls URLs) Get(sid ShortID) (FullURL, error) {
+func (urls SavedURLs) Get(sid ShortID) (FullURL, error) {
 	furl, exist := urls[sid]
 	if !exist {
 		return DefaultFullURL, ErrNotFound{}
@@ -55,38 +54,18 @@ func (urls URLs) Get(sid ShortID) (FullURL, error) {
 }
 
 func short(furl FullURL) ShortID {
-	sid := ShortID(xhashes.FNV64a(string(furl)))
-	if sid < 0 {
-		return -sid
-	}
-	return sid
+	return ShortID(xhashes.FNV64a(string(furl)))
 }
 
-func ParseShort(str []byte) (ShortID, error) {
-	str = bytes.TrimSpace(str)
-	if len(str) == 0 {
+func ParseShort(stringedShort string) (ShortID, error) {
+	s, err := strconv.ParseInt(stringedShort, 10, 64)
+	if err != nil {
 		return DefaultShortID, ErrInvalidShortID{}
 	}
 
-	pos := 0
-	shorted := int64(0)
-	for pos < len(str) && (str[pos] >= '0' && str[pos] <= '9') {
-		if shorted > shorted*int64(10) { //overflow check
-			return DefaultShortID, ErrInvalidShortID{}
-		}
-		shorted = shorted * int64(10)
+	return ShortID(s), nil
+}
 
-		number := int64(str[pos] - '0')
-		if shorted > shorted+number { //overflow check
-			return DefaultShortID, ErrInvalidShortID{}
-		}
-		shorted = shorted + number
-
-		pos += 1
-	}
-	if pos != len(str) {
-		return DefaultShortID, ErrInvalidShortID{}
-	}
-
-	return ShortID(shorted), nil
+func ParseCorrelationID(corrid string) CorrelationID {
+	return CorrelationID(corrid)
 }

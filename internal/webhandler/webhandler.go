@@ -27,6 +27,7 @@ func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 	router.HandleFunc("/{id:[-]?[0-9]+}", h.GetRoot).Methods("GET")
 	router.HandleFunc("/", h.PostRoot).Methods("POST")
 	router.HandleFunc("/api/shorten", h.PostAPIShorten).Methods("POST")
+	router.HandleFunc("/api/shorten/batch", h.PostAPIShortenBatch).Methods("POST")
 	router.HandleFunc("/api/user/urls", h.GetAPIUserURLs).Methods("GET")
 	router.HandleFunc("/ping", h.Ping).Methods("GET")
 
@@ -128,6 +129,37 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(outputJSON)
+}
+
+func (h *WebHandler) PostAPIShortenBatch(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("webhandler: PostAPIShortenBatch: InternalServerError:", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	input := []service.BatchRequestItem{}
+	if err := json.Unmarshal(body, &input); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	output, err := h.repo.SaveBatch(r.Context(), input)
+	if err != nil {
+		log.Println("webhandler: PostAPIShortenBatch: InternalServerError:", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(output)
 }
 
 func (h *WebHandler) GetAPIUserURLs(w http.ResponseWriter, r *http.Request) {

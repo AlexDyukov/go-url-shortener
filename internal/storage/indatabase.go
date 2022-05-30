@@ -89,7 +89,7 @@ func (idb *InDatabase) Save(ctx context.Context, sid ShortID, furl FullURL) erro
 	if _, err := tx.ExecContext(ctx, cmd, user, sid); err != nil {
 		return err
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -99,29 +99,87 @@ func (idb *InDatabase) Put(ctx context.Context, furl FullURL) (ShortID, error) {
 	return sid, idb.Save(ctx, sid, furl)
 }
 
-func (idb *InDatabase) GetURLs(ctx context.Context) (URLs, error) {
+func (idb *InDatabase) PutBatch(ctx context.Context, batch BatchRequest) (BatchResponse, error) {
 	user, err := GetUser(ctx)
 	if err != nil {
-		return URLs{}, err
-	}
-	if user == DefaultUser {
-		return URLs{}, ErrNotFound{}
+		return nil, err
 	}
 
 	conn, err := idb.db.Conn(ctx)
 	if err != nil {
-		return URLs{}, err
+		return nil, err
+	}
+	defer conn.Close()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	cmd := "INSERT INTO urls(short_id, full_url) VALUES ($1, $2) ON CONFLICT DO NOTHING;"
+	stmtURLs, err := tx.PrepareContext(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	defer stmtURLs.Close()
+
+	result := BatchResponse{}
+	for corrid, furl := range batch {
+		sid := short(furl)
+
+		// empty return because of transaction rollback
+		if _, err = stmtURLs.ExecContext(ctx, sid, furl); err != nil {
+			return nil, err
+		}
+
+		result[corrid] = sid
+	}
+
+	if user == DefaultUser {
+		return result, tx.Commit()
+	}
+
+	cmd = "INSERT INTO relations(user_id, short_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;"
+	stmtRelations, err := tx.PrepareContext(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	defer stmtRelations.Close()
+
+	for _, furl := range batch {
+		sid := short(furl)
+
+		if _, err = stmtRelations.ExecContext(ctx, user, sid); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, tx.Commit()
+}
+
+func (idb *InDatabase) GetURLs(ctx context.Context) (SavedURLs, error) {
+	user, err := GetUser(ctx)
+	if err != nil {
+		return nil, err
+	} else if user == DefaultUser {
+		return nil, ErrNotFound{}
+	}
+
+	conn, err := idb.db.Conn(ctx)
+	if err != nil {
+		return nil, err
 	}
 	defer conn.Close()
 
 	cmd := "SELECT u.short_id, u.full_url FROM urls u JOIN relations r ON r.short_id = u.short_id WHERE r.user_id = $1;"
 	rows, err := conn.QueryContext(ctx, cmd, user)
 	if err != nil {
-		return URLs{}, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	result := URLs{}
+	result := SavedURLs{}
 	var sid ShortID
 	var furl FullURL
 	for rows.Next() {
@@ -135,7 +193,7 @@ func (idb *InDatabase) GetURLs(ctx context.Context) (URLs, error) {
 	}
 
 	if len(result) == 0 {
-		return URLs{}, ErrNotFound{}
+		return nil, ErrNotFound{}
 	}
 
 	return result, nil
@@ -161,16 +219,23 @@ func (idb *InDatabase) NewUser(ctx context.Context) (User, error) {
 	if err = rows.Err(); err != nil {
 		return DefaultUser, err
 	}
+
 	var user User
 	err = rows.Scan(&user)
 
 	return user, err
 }
 
-func (idb *InDatabase) Ping(_ context.Context) bool {
-	err := idb.db.Ping()
-	if err != nil {
+func (idb *InDatabase) AddUser(ctx context.Context, newUser User) {
+	//backward compatibility with memory/file storage
+	//do not need to implement, because current app instance does not store data
+}
+
+func (idb *InDatabase) Ping(ctx context.Context) bool {
+	if err := idb.db.Ping(); err != nil {
 		log.Println("storage: indatabase: cannot ping database:", err.Error())
+		return err == nil
 	}
-	return err == nil
+
+	return true
 }

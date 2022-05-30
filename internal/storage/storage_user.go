@@ -1,9 +1,10 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 type ErrInvalidUser struct{}
@@ -16,49 +17,22 @@ type User int64
 
 var DefaultUser = User(0)
 
-func ParseUser(str []byte) (User, error) {
-	str = bytes.TrimSpace(str)
-	if len(str) == 0 {
+func ParseUser(stringedUser string) (User, error) {
+	stringedUser = strings.TrimSpace(stringedUser)
+	u, err := strconv.ParseInt(stringedUser, 10, 64)
+	if err != nil {
 		return DefaultUser, ErrInvalidUser{}
 	}
-
-	pos := 0
-	u := int64(0)
-	// sign
-	sign := int64(1)
-	if len(str) > 1 && str[pos] == '-' {
-		sign = -sign
-		pos += 1
-	}
-	// value
-	for pos < len(str) && (str[pos] >= '0' && str[pos] <= '9') {
-		if u > u*int64(10) { //overflow check
-			return DefaultUser, ErrInvalidUser{}
-		}
-		u = u * int64(10)
-
-		number := int64(str[pos] - '0')
-		if u > u+number { //overflow check
-			return DefaultUser, ErrInvalidUser{}
-		}
-		u = u + number
-
-		pos += 1
-	}
-	if pos != len(str) {
-		return DefaultUser, ErrInvalidUser{}
-	}
-
-	return User(sign * u), nil
+	return User(u), nil
 }
 
 func GetUser(ctx context.Context) (User, error) {
-	input, ok := ctx.Value(UserCtxKey{}).(string)
+	user, ok := ctx.Value(UserCtxKey{}).(string)
 	if !ok {
 		return DefaultUser, ErrInvalidUser{}
 	}
 
-	return ParseUser([]byte(input))
+	return ParseUser(user)
 }
 
 func PutUser(ctx context.Context, user User) context.Context {

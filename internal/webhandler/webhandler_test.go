@@ -32,12 +32,16 @@ func TestMain(m *testing.M) {
 	testStorage := storage.NewInMemory()
 	testService := service.NewURLShortener(testStorage, baseURL)
 
-	user, _ := testService.NewUser(ctx)
+	user, err := testService.NewUser(ctx)
+	if err != nil {
+		panic("cannot initialize new user:" + err.Error())
+	}
+
 	ctx = storage.PutUser(ctx, user)
 
 	savedURL, err := testService.SaveURL(ctx, savedURL)
 	if err != nil {
-		panic("cannot save predefined valid url")
+		panic("cannot save predefined valid url:" + err.Error())
 	}
 	savedID = strings.TrimPrefix(savedURL, baseURL)
 	savedID = strings.TrimPrefix(savedID, "/")

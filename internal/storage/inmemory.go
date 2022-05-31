@@ -41,12 +41,11 @@ func (ims *InMemory) Save(ctx context.Context, sid ShortID, furl FullURL) error 
 	defer ims.mutex.Unlock()
 
 	// save short to defaultUser which used for Get() method
-	savedurl, exist := ims.shorts[DefaultUser][sid]
-	if !exist {
-		ims.shorts[DefaultUser][sid] = furl
-	} else if savedurl != furl {
+	_, exist := ims.shorts[DefaultUser][sid]
+	if exist {
 		return ErrConflict{}
 	}
+	ims.shorts[DefaultUser][sid] = furl
 
 	// user's shorts
 	userShorts, exist := ims.shorts[user]
@@ -61,7 +60,7 @@ func (ims *InMemory) Save(ctx context.Context, sid ShortID, furl FullURL) error 
 }
 
 func (ims *InMemory) Put(ctx context.Context, furl FullURL) (ShortID, error) {
-	sid := short(furl)
+	sid := Short(furl)
 
 	return sid, ims.Save(ctx, sid, furl)
 }
@@ -85,7 +84,7 @@ func (ims *InMemory) PutBatch(ctx context.Context, batch BatchRequest) (BatchRes
 
 	result := BatchResponse{}
 	for corrid, furl := range batch {
-		sid := short(furl)
+		sid := Short(furl)
 
 		savedurl, exist := defaultShorts[sid]
 		if !exist {

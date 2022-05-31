@@ -75,16 +75,17 @@ func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := h.repo.SaveURL(r.Context(), string(body))
 	switch err.(type) {
 	case nil:
+		w.WriteHeader(http.StatusCreated)
+	case storage.ErrConflict:
+		w.WriteHeader(http.StatusConflict)
 	case service.ErrInvalidURL:
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	default:
 		log.Println("webhandler: PostRoot: InternalServerError:", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	w.WriteHeader(http.StatusCreated)
 
 	io.WriteString(w, shortURL)
 }
@@ -113,6 +114,11 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := h.repo.SaveURL(r.Context(), string(inputJSON.URL))
 	switch err.(type) {
 	case nil:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+	case storage.ErrConflict:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
 	case service.ErrInvalidURL:
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -126,8 +132,6 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 		URL string `json:"result"`
 	}{}
 	outputJSON.URL = shortURL
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(outputJSON)
 }
 

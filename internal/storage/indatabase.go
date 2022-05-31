@@ -3,8 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
@@ -51,7 +54,7 @@ func (idb *InDatabase) Get(ctx context.Context, sid ShortID) (FullURL, error) {
 	defer rows.Close()
 
 	if !rows.Next() {
-		return DefaultFullURL, ErrNotFound{}
+		return DefaultFullURL, rows.Err()
 	}
 	if err = rows.Err(); err != nil {
 		return DefaultFullURL, err
@@ -75,9 +78,16 @@ func (idb *InDatabase) Save(ctx context.Context, sid ShortID, furl FullURL) erro
 	}
 	defer tx.Rollback()
 
-	cmd := "INSERT INTO urls(short_id, full_url) VALUES ($1, $2) ON CONFLICT DO NOTHING;"
+	cmd := "INSERT INTO urls(short_id, full_url) VALUES ($1, $2);"
 	if _, err := tx.ExecContext(ctx, cmd, sid, furl); err != nil {
-		return err
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) {
+			return err
+		}
+		if !pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+			return err
+		}
+		return ErrConflict{}
 	}
 
 	user, err := GetUser(ctx)
@@ -94,7 +104,7 @@ func (idb *InDatabase) Save(ctx context.Context, sid ShortID, furl FullURL) erro
 }
 
 func (idb *InDatabase) Put(ctx context.Context, furl FullURL) (ShortID, error) {
-	sid := short(furl)
+	sid := Short(furl)
 
 	return sid, idb.Save(ctx, sid, furl)
 }
@@ -126,7 +136,7 @@ func (idb *InDatabase) PutBatch(ctx context.Context, batch BatchRequest) (BatchR
 
 	result := BatchResponse{}
 	for corrid, furl := range batch {
-		sid := short(furl)
+		sid := Short(furl)
 
 		// empty return because of transaction rollback
 		if _, err = stmtURLs.ExecContext(ctx, sid, furl); err != nil {
@@ -148,7 +158,7 @@ func (idb *InDatabase) PutBatch(ctx context.Context, batch BatchRequest) (BatchR
 	defer stmtRelations.Close()
 
 	for _, furl := range batch {
-		sid := short(furl)
+		sid := Short(furl)
 
 		if _, err = stmtRelations.ExecContext(ctx, user, sid); err != nil {
 			return nil, err
@@ -214,7 +224,7 @@ func (idb *InDatabase) NewUser(ctx context.Context) (User, error) {
 	defer rows.Close()
 
 	if !rows.Next() {
-		return DefaultUser, ErrInternalError{}
+		return DefaultUser, rows.Err()
 	}
 	if err = rows.Err(); err != nil {
 		return DefaultUser, err

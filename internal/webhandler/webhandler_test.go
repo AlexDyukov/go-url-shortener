@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -137,11 +138,19 @@ func TestWebHandler_PostRoot(t *testing.T) {
 		want    want
 	}{
 		{
-			name:    "valid url",
-			request: savedURL,
+			name:    "nonsaved url",
+			request: savedURL + "TestWebHandler_PostRoot",
 			want: want{
 				statusCode:       http.StatusCreated,
-				locationEndsWith: savedID,
+				locationEndsWith: "",
+			},
+		},
+		{
+			name:    "saved url",
+			request: savedURL,
+			want: want{
+				statusCode:       http.StatusConflict,
+				locationEndsWith: "",
 			},
 		},
 		{
@@ -184,13 +193,24 @@ func TestWebHandler_PostApiShorten(t *testing.T) {
 		want    want
 	}{
 		{
-			name: "valid url",
+			name: "nonsaved url",
+			request: request{
+				URL:         savedURL + "TestWebHandler_PostApiShorten",
+				contentType: "application/json",
+			},
+			want: want{
+				statusCode: http.StatusCreated,
+				response:   "{\"result\":\"" + baseURL + "/" + fmt.Sprint(storage.Short(storage.FullURL(savedURL + "TestWebHandler_PostApiShorten"))) + "\"}",
+			},
+		},
+		{
+			name: "saved url",
 			request: request{
 				URL:         savedURL,
 				contentType: "application/json",
 			},
 			want: want{
-				statusCode: http.StatusCreated,
+				statusCode: http.StatusConflict,
 				response:   "{\"result\":\"" + baseURL + "/" + savedID + "\"}",
 			},
 		},

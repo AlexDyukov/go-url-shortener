@@ -4,12 +4,6 @@ import "context"
 
 type UserCtxKey struct{}
 
-type ErrInternalError struct{}
-
-func (e ErrInternalError) Error() string {
-	return "Storage: error processing request"
-}
-
 type BatchRequest map[CorrelationID]FullURL
 type BatchResponse map[CorrelationID]ShortID
 type SavedURLs map[ShortID]FullURL

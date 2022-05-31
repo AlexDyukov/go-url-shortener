@@ -53,7 +53,7 @@ func (urls SavedURLs) Get(sid ShortID) (FullURL, error) {
 	return furl, nil
 }
 
-func short(furl FullURL) ShortID {
+func Short(furl FullURL) ShortID {
 	return ShortID(xhashes.FNV64a(string(furl)))
 }
 

@@ -54,7 +54,7 @@ func (ifs *InFile) Save(ctx context.Context, sid ShortID, furl FullURL) error {
 }
 
 func (ifs *InFile) Put(ctx context.Context, furl FullURL) (ShortID, error) {
-	sid := short(furl)
+	sid := Short(furl)
 
 	return sid, ifs.Save(ctx, sid, furl)
 }

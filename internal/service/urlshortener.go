@@ -37,7 +37,7 @@ func (u *URLShortener) SaveURL(ctx context.Context, fullURL string) (string, err
 
 	sid, err := u.stor.Put(ctx, furl)
 	if err != nil {
-		return "", err
+		return u.getShortURL(sid), err
 	}
 
 	return u.getShortURL(sid), nil

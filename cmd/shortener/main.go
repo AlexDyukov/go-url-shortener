@@ -15,13 +15,13 @@ func main() {
 	var stor storage.Storage
 	switch {
 	case conf.DataBaseDSN != "":
-		s, err := storage.NewInDatabase(conf.DataBaseDSN)
+		s, err := storage.NewInDatabase(conf.DataBaseDSN.String())
 		if err != nil {
 			log.Fatal("cannot open database connection:", err.Error())
 		}
 		stor = s
 	case conf.FileStoragePath != "":
-		s, err := storage.NewInFile(conf.FileStoragePath)
+		s, err := storage.NewInFile(conf.FileStoragePath.String())
 		if err != nil {
 			log.Fatal("cannot open storage file:", err.Error())
 		}
@@ -29,8 +29,8 @@ func main() {
 	default:
 		stor = storage.NewInMemory()
 	}
-	svc := service.NewURLShortener(stor, conf.BaseURL)
-	wh := webhandler.NewWebHandler(svc, conf.EncryptKey)
+	svc := service.NewURLShortener(stor, conf.BaseURL.String())
+	wh := webhandler.NewWebHandler(svc, conf.EncryptKey.String())
 
-	log.Fatal(http.ListenAndServe(conf.ServerAddress, wh.HTTPRouter()))
+	log.Fatal(http.ListenAndServe(conf.ServerAddress.String(), wh.HTTPRouter()))
 }

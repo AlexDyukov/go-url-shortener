@@ -11,6 +11,8 @@ import (
 	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
+var pgInitMigrations []pgMigration
+
 type InDatabase struct {
 	db *sql.DB
 }
@@ -18,7 +20,7 @@ type InDatabase struct {
 func NewInDatabase(dsn string) (Storage, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return NewInMemory(), err
+		return nil, err
 	}
 
 	ctx := context.Background()
@@ -26,14 +28,10 @@ func NewInDatabase(dsn string) (Storage, error) {
 	if err != nil {
 		log.Fatal("storage: indatabase: cannot acquire DB connection:", err.Error())
 	}
-	defer conn.Close()
+	conn.Close()
 
-	// order counts
-	for i := 0; i < len(pgInit); i += 1 {
-		cmd := pgInit[i]
-		if _, err := conn.ExecContext(ctx, cmd); err != nil {
-			log.Fatalf("storage: indatabase: cannot initialize database. Command '%s' failed with error:%s", cmd, err.Error())
-		}
+	for _, m := range pgInitMigrations {
+		m.Run(ctx, db)
 	}
 
 	return &InDatabase{db}, nil
@@ -242,8 +240,15 @@ func (idb *InDatabase) AddUser(ctx context.Context, newUser User) {
 }
 
 func (idb *InDatabase) Ping(ctx context.Context) bool {
-	if err := idb.db.Ping(); err != nil {
-		log.Println("storage: indatabase: cannot ping database:", err.Error())
+	//for _, m := range pgInitMigrations {
+	//	if !m.isDone() {
+	//		fmt.Println(m)
+	//		return false
+	//	}
+	//}
+
+	if err := idb.db.PingContext(ctx); err != nil {
+		log.Println("storage: indatabase: Ping: error:", err.Error())
 		return err == nil
 	}
 

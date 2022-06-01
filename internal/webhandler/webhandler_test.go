@@ -200,7 +200,7 @@ func TestWebHandler_PostApiShorten(t *testing.T) {
 			},
 			want: want{
 				statusCode: http.StatusCreated,
-				response:   "{\"result\":\"" + baseURL + "/" + fmt.Sprint(storage.Short(storage.FullURL(savedURL + "TestWebHandler_PostApiShorten"))) + "\"}",
+				response:   "{\"result\":\"" + baseURL + "/" + fmt.Sprint(storage.Short(storage.FullURL(savedURL+"TestWebHandler_PostApiShorten"))) + "\"}",
 			},
 		},
 		{

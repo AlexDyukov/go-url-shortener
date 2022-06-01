@@ -33,16 +33,13 @@ func (ims *InMemory) Save(ctx context.Context, sid ShortID, furl FullURL) error 
 	user, err := GetUser(ctx)
 	if err != nil {
 		return err
-	} else if user == DefaultUser {
-		return ErrInvalidUser{}
 	}
 
 	ims.mutex.Lock()
 	defer ims.mutex.Unlock()
 
 	// save short to defaultUser which used for Get() method
-	_, exist := ims.shorts[DefaultUser][sid]
-	if exist {
+	if _, exist := ims.shorts[DefaultUser][sid]; exist {
 		return ErrConflict{}
 	}
 	ims.shorts[DefaultUser][sid] = furl

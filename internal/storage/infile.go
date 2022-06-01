@@ -28,7 +28,7 @@ func NewInFile(filename string) (Storage, error) {
 	ifs := InFile{ims: NewInMemory(), filename: filename, seek: 0}
 
 	if err := ifs.readUpdates(); err != nil {
-		return &ifs, err
+		return nil, err
 	}
 
 	go ifs.backgroundUpdate()
@@ -129,7 +129,6 @@ func (ifs *InFile) backgroundUpdate() {
 }
 
 func (ifs *InFile) writeUpdates(s []shortedURL) {
-
 	file, err := os.OpenFile(ifs.filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		log.Println("storage: infile: writeUpdate: cannot open storage file:", err.Error())

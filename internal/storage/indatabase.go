@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/jackc/pgconn"
@@ -31,7 +32,8 @@ func NewInDatabase(dsn string) (Storage, error) {
 	conn.Close()
 
 	for _, m := range pgInitMigrations {
-		m.Run(ctx, db)
+		m := m
+		go m.Run(ctx, db)
 	}
 
 	return &InDatabase{db}, nil
@@ -236,16 +238,15 @@ func (idb *InDatabase) NewUser(ctx context.Context) (User, error) {
 
 func (idb *InDatabase) AddUser(ctx context.Context, newUser User) {
 	//backward compatibility with memory/file storage
-	//do not need to implement, because current app instance does not store data
+	//do not need to implement, because of external storage
 }
 
 func (idb *InDatabase) Ping(ctx context.Context) bool {
-	//for _, m := range pgInitMigrations {
-	//	if !m.isDone() {
-	//		fmt.Println(m)
-	//		return false
-	//	}
-	//}
+	for _, m := range pgInitMigrations {
+		if !m.isDone() {
+			return false
+		}
+	}
 
 	if err := idb.db.PingContext(ctx); err != nil {
 		log.Println("storage: indatabase: Ping: error:", err.Error())

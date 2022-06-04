@@ -7,9 +7,10 @@ import (
 )
 
 type InMemory struct {
-	mutex  sync.RWMutex
-	shorts map[User]SavedURLs
-	users  int64
+	mutex   sync.RWMutex
+	shorts  map[User]SavedURLs
+	deleted map[ShortID]struct{}
+	users   int64
 }
 
 func NewInMemory() Storage {
@@ -22,10 +23,15 @@ func (ims *InMemory) Get(_ context.Context, sid ShortID) (FullURL, error) {
 	ims.mutex.RLock()
 	defer ims.mutex.RUnlock()
 
+	if _, exist := ims.deleted[sid]; exist {
+		return DefaultFullURL, ErrDeleted{}
+	}
+
 	furl, exist := ims.shorts[DefaultUser][sid]
 	if !exist {
 		return DefaultFullURL, ErrNotFound{}
 	}
+
 	return furl, nil
 }
 
@@ -38,11 +44,16 @@ func (ims *InMemory) Save(ctx context.Context, sid ShortID, furl FullURL) error 
 	ims.mutex.Lock()
 	defer ims.mutex.Unlock()
 
-	// save short to defaultUser which used for Get() method
-	if _, exist := ims.shorts[DefaultUser][sid]; exist {
+	if _, exist := ims.deleted[sid]; exist {
 		return ErrConflict{}
 	}
-	ims.shorts[DefaultUser][sid] = furl
+
+	// save short to defaultUser which used for Get() method
+	defaultShorts := ims.shorts[DefaultUser]
+	if _, exist := defaultShorts[sid]; exist {
+		return ErrConflict{}
+	}
+	defaultShorts[sid] = furl
 
 	// user's shorts
 	userShorts, exist := ims.shorts[user]
@@ -83,18 +94,18 @@ func (ims *InMemory) PutBatch(ctx context.Context, batch BatchRequest) (BatchRes
 	for corrid, furl := range batch {
 		sid := Short(furl)
 
-		savedurl, exist := defaultShorts[sid]
-		if !exist {
-			defaultShorts[sid] = furl
-		} else if savedurl != furl {
-			//just do nothing, response wont contains failed corrid
+		if _, exist := ims.deleted[sid]; exist {
+			//return result, ErrDeleted{}
 			continue
 		}
 
-		if _, exist = userShorts[sid]; !exist {
-			userShorts[sid] = furl
+		if _, exist := defaultShorts[sid]; exist {
+			//return result, ErrConflict{}
+			continue
 		}
 
+		defaultShorts[sid] = furl
+		userShorts[sid] = furl
 		result[corrid] = sid
 	}
 
@@ -122,6 +133,49 @@ func (ims *InMemory) GetURLs(ctx context.Context) (SavedURLs, error) {
 	}
 
 	return result, nil
+}
+
+func (ims *InMemory) DeleteURLs(ctx context.Context, sids []ShortID) error {
+	if _, err := GetUser(ctx); err != nil {
+		return err
+	}
+
+	go func() {
+		_ = ims.AsyncDeleteURLs(ctx, sids)
+	}()
+
+	return nil
+}
+
+func (ims *InMemory) AsyncDeleteURLs(ctx context.Context, sids []ShortID) []ShortID {
+	result := []ShortID{}
+
+	user, err := GetUser(ctx)
+	if err != nil {
+		return result
+	}
+
+	ims.mutex.Lock()
+	defer ims.mutex.Unlock()
+
+	userShorts, exist := ims.shorts[user]
+	if !exist {
+		return result
+	}
+	defaultShorts := ims.shorts[DefaultUser]
+	deleted := ims.deleted
+
+	for _, sid := range sids {
+		if _, exist := userShorts[sid]; !exist {
+			continue
+		}
+		delete(userShorts, sid)
+		delete(defaultShorts, sid)
+		deleted[sid] = struct{}{}
+		result = append(result, sid)
+	}
+
+	return result
 }
 
 func (ims *InMemory) NewUser(_ context.Context) (User, error) {

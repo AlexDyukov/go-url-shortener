@@ -14,6 +14,7 @@ func (e ErrInvalidUser) Error() string {
 }
 
 type User int64
+type UserCtxKey struct{}
 
 var DefaultUser = User(0)
 

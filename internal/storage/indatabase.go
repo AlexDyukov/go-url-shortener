@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/jackc/pgconn"
@@ -14,8 +13,16 @@ import (
 
 var pgInitMigrations []pgMigration
 
+const maxValuesInAnyClause = 100
+
+type toDelete struct {
+	User   User
+	Shorts []ShortID
+}
+
 type InDatabase struct {
-	db *sql.DB
+	db   *sql.DB
+	junk chan<- toDelete
 }
 
 func NewInDatabase(dsn string) (Storage, error) {
@@ -25,6 +32,7 @@ func NewInDatabase(dsn string) (Storage, error) {
 	}
 
 	ctx := context.Background()
+
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		log.Fatal("storage: indatabase: cannot acquire DB connection:", err.Error())
@@ -33,53 +41,68 @@ func NewInDatabase(dsn string) (Storage, error) {
 
 	for _, m := range pgInitMigrations {
 		m := m
-		go m.Run(ctx, db)
+		m.Run(ctx, db)
 	}
 
-	return &InDatabase{db}, nil
+	ch := make(chan toDelete)
+	go func(db *sql.DB, ch <-chan toDelete) {
+		cmd := "UPDATE urls SET isdeleted = true FROM relations AS r WHERE r.short_id = urls.short_id AND r.user_id = $1 AND urls.isdeleted = false AND urls.short_id = ANY ($2);"
+		var val toDelete
+		var user User
+		var shorts []ShortID
+		for {
+			val = <-ch
+			user = val.User
+			shorts = val.Shorts
+
+			for limit := len(shorts); limit > 0; limit = len(shorts) {
+				if limit > maxValuesInAnyClause {
+					limit = maxValuesInAnyClause
+				}
+
+				sToDelete := shorts[:limit]
+				shorts = shorts[limit:]
+
+				if _, err := db.Exec(cmd, user, sToDelete); err != nil {
+					log.Println("storage: indatabase: background task: cannot execute update query:", err.Error())
+					continue
+				}
+			}
+		}
+	}(db, ch)
+
+	return &InDatabase{db: db, junk: ch}, nil
 }
 
 func (idb *InDatabase) Get(ctx context.Context, sid ShortID) (FullURL, error) {
-	conn, err := idb.db.Conn(ctx)
-	if err != nil {
-		return DefaultFullURL, err
-	}
-	defer conn.Close()
-
-	cmd := "SELECT full_url FROM urls WHERE short_id = $1;"
-	rows, err := conn.QueryContext(ctx, cmd, sid)
+	cmd := "SELECT full_url, isdeleted FROM urls WHERE short_id = $1;"
+	rows, err := idb.db.QueryContext(ctx, cmd, sid)
 	if err != nil {
 		return DefaultFullURL, err
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		return DefaultFullURL, rows.Err()
+		return DefaultFullURL, ErrNotFound{}
 	}
 	if err = rows.Err(); err != nil {
 		return DefaultFullURL, err
 	}
 
 	var furl FullURL
-	err = rows.Scan(&furl)
-	return furl, err
+	var isdeleted *bool
+	if err = rows.Scan(&furl, &isdeleted); err != nil {
+		return furl, err
+	}
+	if *isdeleted {
+		return furl, ErrDeleted{}
+	}
+	return furl, nil
 }
 
 func (idb *InDatabase) Save(ctx context.Context, sid ShortID, furl FullURL) error {
-	conn, err := idb.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
 	cmd := "INSERT INTO urls(short_id, full_url) VALUES ($1, $2);"
-	if _, err := tx.ExecContext(ctx, cmd, sid, furl); err != nil {
+	if _, err := idb.db.ExecContext(ctx, cmd, sid, furl); err != nil {
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) {
 			return err
@@ -96,11 +119,9 @@ func (idb *InDatabase) Save(ctx context.Context, sid ShortID, furl FullURL) erro
 	}
 
 	cmd = "INSERT INTO relations(user_id, short_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;"
-	if _, err := tx.ExecContext(ctx, cmd, user, sid); err != nil {
-		return err
-	}
+	_, err = idb.db.ExecContext(ctx, cmd, user, sid)
 
-	return tx.Commit()
+	return err
 }
 
 func (idb *InDatabase) Put(ctx context.Context, furl FullURL) (ShortID, error) {
@@ -115,13 +136,7 @@ func (idb *InDatabase) PutBatch(ctx context.Context, batch BatchRequest) (BatchR
 		return nil, err
 	}
 
-	conn, err := idb.db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := idb.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +172,7 @@ func (idb *InDatabase) PutBatch(ctx context.Context, batch BatchRequest) (BatchR
 	}
 	defer stmtRelations.Close()
 
-	for _, furl := range batch {
-		sid := Short(furl)
-
+	for _, sid := range result {
 		if _, err = stmtRelations.ExecContext(ctx, user, sid); err != nil {
 			return nil, err
 		}
@@ -176,14 +189,8 @@ func (idb *InDatabase) GetURLs(ctx context.Context) (SavedURLs, error) {
 		return nil, ErrNotFound{}
 	}
 
-	conn, err := idb.db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	cmd := "SELECT u.short_id, u.full_url FROM urls u JOIN relations r ON r.short_id = u.short_id WHERE r.user_id = $1;"
-	rows, err := conn.QueryContext(ctx, cmd, user)
+	cmd := "SELECT u.short_id, u.full_url FROM urls u JOIN relations r ON r.short_id = u.short_id WHERE r.user_id = $1 AND NOT u.isdeleted;"
+	rows, err := idb.db.QueryContext(ctx, cmd, user)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +214,29 @@ func (idb *InDatabase) GetURLs(ctx context.Context) (SavedURLs, error) {
 	}
 
 	return result, nil
+}
+
+func (idb *InDatabase) DeleteURLs(ctx context.Context, sids []ShortID) error {
+	if _, err := GetUser(ctx); err != nil {
+		return err
+	}
+
+	go func() {
+		_ = idb.AsyncDeleteURLs(ctx, sids)
+	}()
+
+	return nil
+}
+
+func (idb *InDatabase) AsyncDeleteURLs(ctx context.Context, sids []ShortID) []ShortID {
+	user, err := GetUser(ctx)
+	if err != nil {
+		return sids
+	}
+
+	idb.junk <- toDelete{User: user, Shorts: sids}
+
+	return sids
 }
 
 func (idb *InDatabase) NewUser(ctx context.Context) (User, error) {
@@ -242,11 +272,11 @@ func (idb *InDatabase) AddUser(ctx context.Context, newUser User) {
 }
 
 func (idb *InDatabase) Ping(ctx context.Context) bool {
-	for _, m := range pgInitMigrations {
-		if !m.isDone() {
-			return false
-		}
-	}
+	//for _, m := range pgInitMigrations {
+	//	if !m.isDone() {
+	//		return false
+	//	}
+	//}
 
 	if err := idb.db.PingContext(ctx); err != nil {
 		log.Println("storage: indatabase: Ping: error:", err.Error())

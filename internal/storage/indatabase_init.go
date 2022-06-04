@@ -14,16 +14,10 @@ type pgMigration struct {
 }
 
 func (m *pgMigration) Run(ctx context.Context, db *sql.DB) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		log.Fatal("storage: indatabase: cannot acquire DB connection:", err.Error())
-	}
-	defer conn.Close()
-
 	for i := 0; i < len(m.commands); i += 1 {
 		cmd := m.commands[i]
 
-		if _, err := conn.ExecContext(ctx, cmd); err != nil {
+		if _, err := db.ExecContext(ctx, cmd); err != nil {
 			log.Fatalf("storage: indatabase: cannot initialize database. Command '%s' failed with error:%s", cmd, err.Error())
 		}
 
@@ -51,11 +45,12 @@ func init() {
 		name: "urls table",
 		commands: []string{
 			"CREATE TABLE IF NOT EXISTS urls ();",
-			"ALTER TABLE urls ADD COLUMN IF NOT EXISTS short_id bigint UNIQUE NOT NULL;",
+			"ALTER TABLE urls ADD COLUMN IF NOT EXISTS short_id BIGINT UNIQUE NOT NULL;",
 			"ALTER TABLE urls ADD COLUMN IF NOT EXISTS full_url VARCHAR NOT NULL;",
+			"ALTER TABLE urls ADD COLUMN IF NOT EXISTS isdeleted BOOLEAN DEFAULT false NOT NULL;",
 			//https://www.postgresql.org/docs/current/sql-createtable.html
 			//PostgreSQL automatically creates an index for each unique constraint and primary key constraint to enforce uniqueness.
-			//"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_urls__short_id ON urls (short_id);",
+			//"CREATE INDEX IF NOT EXISTS idx_urls__short_id ON urls (short_id);",
 		},
 		done: 0,
 	})
@@ -63,8 +58,8 @@ func init() {
 		name: "relations table",
 		commands: []string{
 			"CREATE TABLE IF NOT EXISTS relations ();",
-			"ALTER TABLE relations ADD COLUMN IF NOT EXISTS user_id bigint NOT NULL;",
-			"ALTER TABLE relations ADD COLUMN IF NOT EXISTS short_id bigint NOT NULL;",
+			"ALTER TABLE relations ADD COLUMN IF NOT EXISTS user_id BIGINT NOT NULL;",
+			"ALTER TABLE relations ADD COLUMN IF NOT EXISTS short_id BIGINT NOT NULL;",
 			"CREATE INDEX IF NOT EXISTS idx_relations__user_id ON relations (user_id);",
 			"CREATE INDEX IF NOT EXISTS idx_relations__short_id ON relations (short_id);",
 		},

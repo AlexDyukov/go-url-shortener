@@ -86,6 +86,19 @@ func (u *URLShortener) GetURLs(ctx context.Context) ([]URLs, error) {
 	return answer, nil
 }
 
+func (u *URLShortener) DeleteURLs(ctx context.Context, todelete []string) error {
+	sids := []storage.ShortID{}
+	for _, shortIDstr := range todelete {
+		sid, err := storage.ParseShort(shortIDstr)
+		if err != nil {
+			return err
+		}
+		sids = append(sids, sid)
+	}
+
+	return u.stor.DeleteURLs(ctx, sids)
+}
+
 func (u *URLShortener) NewUser(ctx context.Context) (storage.User, error) {
 	return u.stor.NewUser(ctx)
 }

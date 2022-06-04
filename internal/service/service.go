@@ -32,6 +32,7 @@ type Repository interface {
 	SaveBatch(ctx context.Context, breq []BatchRequestItem) ([]BatchResponseItem, error)
 	GetURL(ctx context.Context, shortIDstr string) (string, error)
 	GetURLs(ctx context.Context) ([]URLs, error)
+	DeleteURLs(ctx context.Context, todelete []string) error
 	NewUser(ctx context.Context) (storage.User, error)
 	Ping(ctx context.Context) bool
 }

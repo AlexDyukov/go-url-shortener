@@ -29,6 +29,7 @@ func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 	router.HandleFunc("/api/shorten", h.PostAPIShorten).Methods("POST")
 	router.HandleFunc("/api/shorten/batch", h.PostAPIShortenBatch).Methods("POST")
 	router.HandleFunc("/api/user/urls", h.GetAPIUserURLs).Methods("GET")
+	router.HandleFunc("/api/user/urls", h.DeleteAPIUserURLs).Methods("DELETE")
 	router.HandleFunc("/ping", h.Ping).Methods("GET")
 
 	h.router = router
@@ -49,10 +50,13 @@ func (h *WebHandler) GetRoot(w http.ResponseWriter, r *http.Request) {
 	switch err.(type) {
 	case nil:
 	case storage.ErrInvalidShortID:
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	case storage.ErrNotFound:
 		w.WriteHeader(http.StatusNotFound)
+		return
+	case storage.ErrDeleted:
+		w.WriteHeader(http.StatusGone)
 		return
 	default:
 		log.Println("webhandler: GetRoot: InternalServerError:", err.Error())
@@ -93,7 +97,8 @@ func (h *WebHandler) PostRoot(w http.ResponseWriter, r *http.Request) {
 func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
-		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
 	}
 
 	body, err := ioutil.ReadAll(r.Body)
@@ -120,7 +125,7 @@ func (h *WebHandler) PostAPIShorten(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 	case service.ErrInvalidURL:
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	default:
 		log.Println("webhandler: PostAPIShorten: InternalServerError:", err.Error())
@@ -180,14 +185,48 @@ func (h *WebHandler) GetAPIUserURLs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "\t")
 	encoder.Encode(urls)
 }
 
+func (h *WebHandler) DeleteAPIUserURLs(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("webhandler: DeleteAPIUserURLs: InternalServerError:", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	input := []string{}
+	if err := json.Unmarshal(body, &input); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = h.repo.DeleteURLs(r.Context(), input)
+	switch err.(type) {
+	case nil:
+	case storage.ErrNotFound:
+		w.WriteHeader(http.StatusNoContent)
+		return
+	default:
+		log.Println("webhandler: GetAPIUserURLs: InternalServerError:", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (h *WebHandler) Ping(w http.ResponseWriter, r *http.Request) {
 	if !h.repo.Ping(r.Context()) {
-		http.Error(w, "Storage unavailable", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 }

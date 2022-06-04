@@ -24,6 +24,12 @@ func (e ErrNotFound) Error() string {
 	return "Storage: url not found"
 }
 
+type ErrDeleted struct{}
+
+func (e ErrDeleted) Error() string {
+	return "Storage: url got deleted"
+}
+
 type FullURL string
 type CorrelationID string
 type ShortID int64

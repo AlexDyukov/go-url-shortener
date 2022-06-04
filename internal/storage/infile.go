@@ -19,9 +19,10 @@ type InFile struct {
 }
 
 type shortedURL struct {
-	Sid  ShortID `json:"id"`
-	Furl FullURL `json:"url"`
-	User User    `json:"user"`
+	Sid     ShortID `json:"id"`
+	Furl    FullURL `json:"url"`
+	User    User    `json:"user"`
+	Deleted bool    `json:"deleted"`
 }
 
 func NewInFile(filename string) (Storage, error) {
@@ -77,6 +78,34 @@ func (ifs *InFile) PutBatch(ctx context.Context, batch BatchRequest) (BatchRespo
 
 func (ifs *InFile) GetURLs(ctx context.Context) (SavedURLs, error) {
 	return ifs.ims.GetURLs(ctx)
+}
+
+func (ifs *InFile) DeleteURLs(ctx context.Context, sids []ShortID) error {
+	if _, err := GetUser(ctx); err != nil {
+		return err
+	}
+
+	go func() {
+		_ = ifs.AsyncDeleteURLs(ctx, sids)
+	}()
+
+	return nil
+}
+
+func (ifs *InFile) AsyncDeleteURLs(ctx context.Context, sids []ShortID) []ShortID {
+	result := ifs.ims.AsyncDeleteURLs(ctx, sids)
+
+	user, err := GetUser(ctx)
+	if err != nil {
+		return result
+	}
+
+	update := []shortedURL{}
+	for _, sid := range result {
+		update = append(update, shortedURL{Sid: sid, Furl: DefaultFullURL, User: user, Deleted: true})
+	}
+	ifs.writeUpdates(update)
+	return result
 }
 
 func (ifs *InFile) NewUser(ctx context.Context) (User, error) {
@@ -192,6 +221,11 @@ func (ifs *InFile) readUpdates() error {
 		}
 
 		ctx := context.WithValue(context.Background(), UserCtxKey{}, fmt.Sprint(s.User))
+		if s.Deleted {
+			ifs.ims.AsyncDeleteURLs(ctx, []ShortID{s.Sid})
+			continue
+		}
+
 		if err := ifs.ims.Save(ctx, s.Sid, s.Furl); err != nil {
 			log.Println("storage: infile: readUpdates: cannot Save in memory:", err.Error())
 			continue

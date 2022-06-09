@@ -1,6 +1,6 @@
 module github.com/alexdyukov/go-url-shortener
 
-go 1.17
+go 1.18
 
 require (
 	github.com/caarlos0/env/v6 v6.9.3
@@ -33,3 +33,5 @@ replace github.com/alexdyukov/go-url-shortener/internal/service => ./internal/se
 replace github.com/alexdyukov/go-url-shortener/internal/storage => ./internal/storage
 
 replace github.com/alexdyukov/go-url-shortener/internal/webhandler => ./internal/webhandler
+
+replace github.com/alexdyukov/go-url-shortener/cmd/webconfig => ./cmd/webconfig

@@ -4,13 +4,14 @@ import (
 	"log"
 	"net/http"
 
-	service "github.com/alexdyukov/go-url-shortener/internal/service"
-	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
-	webhandler "github.com/alexdyukov/go-url-shortener/internal/webhandler"
+	"github.com/alexdyukov/go-url-shortener/internal/service"
+	"github.com/alexdyukov/go-url-shortener/internal/storage"
+	"github.com/alexdyukov/go-url-shortener/internal/webhandler"
+	"github.com/alexdyukov/go-url-shortener/cmd/webconfig"
 )
 
 func main() {
-	conf := GetConfig()
+	conf := webconfig.GetConfig()
 
 	var stor storage.Storage
 	switch {

@@ -22,7 +22,7 @@ type toDelete struct {
 
 type InDatabase struct {
 	db   *sql.DB
-	junk chan<- toDelete
+	junk chan toDelete
 }
 
 func NewInDatabase(dsn string) (Storage, error) {
@@ -33,45 +33,19 @@ func NewInDatabase(dsn string) (Storage, error) {
 
 	ctx := context.Background()
 
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		log.Fatal("storage: indatabase: cannot acquire DB connection:", err.Error())
-	}
-	conn.Close()
-
 	for _, m := range pgInitMigrations {
 		m := m
+		//TODO async migrations
+		//go m.Run(ctx, db)
 		m.Run(ctx, db)
 	}
 
 	ch := make(chan toDelete)
-	go func(db *sql.DB, ch <-chan toDelete) {
-		cmd := "UPDATE urls SET isdeleted = true FROM relations AS r WHERE r.short_id = urls.short_id AND r.user_id = $1 AND urls.isdeleted = false AND urls.short_id = ANY ($2);"
-		var val toDelete
-		var user User
-		var shorts []ShortID
-		for {
-			val = <-ch
-			user = val.User
-			shorts = val.Shorts
 
-			for limit := len(shorts); limit > 0; limit = len(shorts) {
-				if limit > maxValuesInAnyClause {
-					limit = maxValuesInAnyClause
-				}
+	idb := InDatabase{db: db, junk: ch}
+	go idb.backgroundUpdate()
 
-				sToDelete := shorts[:limit]
-				shorts = shorts[limit:]
-
-				if _, err := db.Exec(cmd, user, sToDelete); err != nil {
-					log.Println("storage: indatabase: background task: cannot execute update query:", err.Error())
-					continue
-				}
-			}
-		}
-	}(db, ch)
-
-	return &InDatabase{db: db, junk: ch}, nil
+	return &idb, nil
 }
 
 func (idb *InDatabase) Get(ctx context.Context, sid ShortID) (FullURL, error) {
@@ -90,11 +64,11 @@ func (idb *InDatabase) Get(ctx context.Context, sid ShortID) (FullURL, error) {
 	}
 
 	var furl FullURL
-	var isdeleted *bool
+	var isdeleted bool
 	if err = rows.Scan(&furl, &isdeleted); err != nil {
 		return furl, err
 	}
-	if *isdeleted {
+	if isdeleted {
 		return furl, ErrDeleted{}
 	}
 	return furl, nil
@@ -272,16 +246,39 @@ func (idb *InDatabase) AddUser(ctx context.Context, newUser User) {
 }
 
 func (idb *InDatabase) Ping(ctx context.Context) bool {
+	if err := idb.db.PingContext(ctx); err != nil {
+		log.Println("storage: indatabase: Ping: error:", err.Error())
+		return false
+	}
+
+	////TODO async migrations
 	//for _, m := range pgInitMigrations {
 	//	if !m.isDone() {
 	//		return false
 	//	}
 	//}
 
-	if err := idb.db.PingContext(ctx); err != nil {
-		log.Println("storage: indatabase: Ping: error:", err.Error())
-		return err == nil
-	}
-
 	return true
+}
+
+func (idb *InDatabase) backgroundUpdate() {
+	cmd := "UPDATE urls SET isdeleted = true FROM relations AS r WHERE r.short_id = urls.short_id AND r.user_id = $1 AND urls.isdeleted = false AND urls.short_id = ANY ($2);"
+
+	for {
+		task := <-idb.junk
+		user := task.User
+		shorts := task.Shorts
+
+		for limit := len(shorts); limit > 0; limit = len(shorts) {
+			if limit > maxValuesInAnyClause {
+				limit = maxValuesInAnyClause
+			}
+			toDelete := shorts[:limit]
+			shorts = shorts[limit:]
+			if _, err := idb.db.Exec(cmd, user, toDelete); err != nil {
+				log.Println("storage: indatabase: backgroundUpdate: cannot execute update query:", err.Error())
+				continue
+			}
+		}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/alexdyukov/compresshandler"
 	service "github.com/alexdyukov/go-url-shortener/internal/service"
 	storage "github.com/alexdyukov/go-url-shortener/internal/storage"
 	"github.com/gorilla/mux"
@@ -40,7 +41,8 @@ func NewWebHandler(svc service.Repository, encryptKey string) *WebHandler {
 func (h *WebHandler) HTTPRouter() http.Handler {
 	ah := newAuthHandler(h.encryptor, h.repo)
 	handler := ah(h.router)
-	handler = compressHandler(handler)
+	c := compresshandler.NewNetHTTPHandler(compresshandler.Config{})
+	handler = c(handler)
 	return handler
 }
 
